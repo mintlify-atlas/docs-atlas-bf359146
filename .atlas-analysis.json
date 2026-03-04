@@ -1,0 +1,125 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Intel QAT Engine",
+  "projectDescription": "OpenSSL engine providing cryptographic acceleration for Intel QuickAssist Technology enabled platforms via hardware and optimized software.",
+  "theme": "aspen",
+  "primaryColor": "#0071C5",
+  "lightColor": "#00C7FD",
+  "darkColor": "#0054A3",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Installation",
+            "pages": [
+              "installation/requirements",
+              "installation/from-packages",
+              "installation/from-source",
+              "installation/build-options"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/qat-hw",
+              "concepts/qat-sw",
+              "concepts/coexistence",
+              "concepts/async-operations"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/openssl-config",
+              "configuration/engine-messages",
+              "configuration/driver-config"
+            ]
+          },
+          {
+            "group": "Advanced Features",
+            "pages": [
+              "advanced/kpt",
+              "advanced/fips",
+              "advanced/software-fallback",
+              "advanced/pipelining",
+              "advanced/boringssl"
+            ]
+          },
+          {
+            "group": "Integration",
+            "pages": [
+              "integration/applications",
+              "integration/provider-support"
+            ]
+          },
+          {
+            "group": "Troubleshooting",
+            "pages": [
+              "troubleshooting/common-issues",
+              "troubleshooting/debugging",
+              "troubleshooting/limitations"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Hardware Acceleration",
+            "pages": [
+              "api/qat-hw/asymmetric",
+              "api/qat-hw/symmetric",
+              "api/qat-hw/key-derivation",
+              "api/qat-hw/hashing"
+            ]
+          },
+          {
+            "group": "Software Acceleration",
+            "pages": [
+              "api/qat-sw/asymmetric",
+              "api/qat-sw/symmetric",
+              "api/qat-sw/hashing"
+            ]
+          },
+          {
+            "group": "Engine Control",
+            "pages": [
+              "api/engine-ctrl",
+              "api/provider-interface"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Hardware-accelerated cryptography via Intel QuickAssist Technology",
+    "Optimized software acceleration using Intel instruction sets",
+    "Support for RSA, ECDH, ECDSA, AES-GCM, ChaCha20-Poly1305, and more",
+    "Asynchronous and pipelined operations for high throughput",
+    "OpenSSL 3.0 provider support and FIPS 140-3 compliance",
+    "Dual-mode operation with QAT_HW and QAT_SW co-existence"
+  ],
+  "publicApiSurface": [
+    "qatengine (OpenSSL Engine)",
+    "qatprovider (OpenSSL 3.0 Provider)",
+    "QAT_HW acceleration APIs (RSA, DH, DSA, ECDH, ECDSA, ECX, AES-GCM, AES-CCM, ChaCha20-Poly1305, PRF, HKDF, SHA3, SM2, SM3, SM4)",
+    "QAT_SW acceleration APIs (RSA, ECDH, ECDSA, ECX, AES-GCM, SM2, SM3, SM4)",
+    "Engine control commands (ENABLE_EXTERNAL_POLLING, POLL, SET_INSTANCE_FOR_THREAD, INIT_ENGINE, etc.)",
+    "Memory management APIs (qae_mem utilities)",
+    "Asynchronous job handling",
+    "Software fallback mechanisms",
+    "KPT (Key Protection Technology) support",
+    "BoringSSL integration APIs"
+  ]
+}
