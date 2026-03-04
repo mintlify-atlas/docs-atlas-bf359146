@@ -1,0 +1,227 @@
+---
+title: 'BoringSSL Integration'
+description: 'Build and use QAT Engine with Google BoringSSL'
+---
+
+## Overview
+
+Intel QuickAssist Technology BoringSSL Library is a prototype for accelerating asymmetric cryptographic algorithms with BoringSSL, Google's OpenSSL fork. Since BoringSSL doesn't support the traditional engine mechanism, the QAT library integrates using BoringSSL's private key method interface.
+
+The build system automatically detects the SSL library type during configuration and builds:
+- A traditional engine library for OpenSSL
+- A library using BoringSSL's private key method for BoringSSL
+
+## Supported Features
+
+### QAT_HW Acceleration
+
+**Asynchronous and Synchronous PKE**:
+- **RSA**: Key sizes 1024, 2048, 3072, 4096
+- **ECDSA**: NIST Prime Curves P-256, P-384, P-521 (disabled by default)
+
+### QAT_SW Acceleration  
+
+**Asynchronous PKE**:
+- **RSA**: Key sizes 2048, 3072, 4096
+- **ECDSA**: NIST Prime Curves P-256, P-384 (disabled by default)
+
+<Info>
+  RSA padding schemes are handled by BoringSSL rather than accelerated. The engine supports the same padding schemes as BoringSSL does natively.
+</Info>
+
+## Limitations
+
+<Warning>
+  **Curve Support**: NIST Binary Curves and NIST Koblitz Curves are not supported by BoringSSL.
+</Warning>
+
+<Warning>
+  **Library Dependency**: The `RSA_padding_add_PKCS1_OAEP` function is exported by BoringSSL's `libdecrepit.so`. This library must be linked during the build. Systems lacking this library may encounter linking errors.
+</Warning>
+
+## Requirements
+
+- QAT-capable hardware (for QAT_HW) or compatible processor (for QAT_SW)
+- BoringSSL source code
+- QAT driver package (for QAT_HW)
+- crypto_mb library (for QAT_SW RSA/ECDSA)
+- IPSec_MB library (for QAT_SW)
+
+For detailed requirements, see:
+- [Hardware Requirements](/installation/requirements#hardware-requirements)
+- [Software Requirements](/installation/requirements#software-requirements)
+
+## Building for BoringSSL
+
+### Step 1: Build BoringSSL
+
+Clone and build BoringSSL with shared library support:
+
+```bash
+git clone https://github.com/google/boringssl.git
+cd boringssl
+mkdir -p build
+cd build/
+```
+
+<Info>
+  BoringSSL builds static libraries by default. For compatibility with QAT Engine in applications like NGINX, build as a shared library using the `-DBUILD_SHARED_LIBS=1` flag.
+</Info>
+
+```bash
+cmake .. -DBUILD_SHARED_LIBS=1 -DCMAKE_BUILD_TYPE=Release
+make
+```
+
+### Step 2: Organize BoringSSL Libraries
+
+BoringSSL doesn't provide a `make install` target. Create a unified library directory:
+
+```bash
+cd ..
+mkdir -p lib
+ln -sf $(pwd)/build/libboringssl_gtest.so lib/
+ln -sf $(pwd)/build/crypto/libcrypto.so lib/
+ln -sf $(pwd)/build/ssl/libssl.so lib/
+ln -sf $(pwd)/build/decrepit/libdecrepit.so lib/
+```
+
+### Step 3: Build QAT BoringSSL Library
+
+Navigate to the QAT Engine source and run autogen:
+
+```bash
+cd <path/to/qat_engine/source/code>
+./autogen.sh
+```
+
+<Info>
+  Ensure autotools (autoconf, automake, libtool, and pkg-config) are installed before running `autogen.sh`.
+</Info>
+
+#### Build with QAT_HW
+
+```bash
+./configure \
+  --with-openssl_install_dir=<path/to/boringssl/source/code> \
+  --with-qat_hw_dir=<path/to/qat/driver>
+make
+make install
+```
+
+#### Build with QAT_SW
+
+```bash
+./configure \
+  --enable-qat_sw \
+  --with-openssl_install_dir=<path/to/boringssl/source/code>
+make
+make install
+```
+
+<Info>
+  If qatlib is installed on the system when building QAT_SW, add `--disable-qat_hw` to the configure command.
+</Info>
+
+**Library Paths**:
+
+The `--enable-qat_sw` flag searches for required libraries in:
+- Default paths: `/usr/local/lib` and `/usr/lib`
+- Custom paths via:
+  - `--with-qat_sw_crypto_mb_install_dir` (for crypto_mb)
+  - `--with-qat_sw_ipsec_mb_install_dir` (for IPSec_MB)
+
+If a library is not found, its corresponding algorithm support is disabled.
+
+### Step 4: Installation
+
+The QAT BoringSSL Library `libqatengine.so` is installed to `/usr/local/lib` by default. Use `--prefix` to specify a different installation path:
+
+```bash
+./configure --prefix=/custom/path ...
+```
+
+## Testing
+
+### Test Tool
+
+The test code is located in the `test_bssl/` directory and is compiled with the library.
+
+#### Usage
+
+```bash
+./qatengine_test -h
+```
+
+**Output**:
+```
+Usage: ./qatengine_test [-h/-d/-a] <-k>
+-a :    Enable async mode
+-d :    Test on rsa private decrypt
+-h :    Print all available options
+-k :    Set private key file path for test purpose
+```
+
+#### Example Commands
+
+```bash
+# Test RSA 2048-bit key
+./qatengine_test -k /opt/rsa_private_2k.key
+
+# Test RSA 2048-bit key with async mode
+./qatengine_test -k /opt/rsa_private_2k.key -a
+
+# Test RSA private decrypt
+./qatengine_test -k /opt/rsa_private_2k.key -d
+
+# Test RSA 4096-bit key
+./qatengine_test -k /opt/rsa_private_4k.key
+
+# Test ECDSA P-384
+./qatengine_test -k /opt/ec-secp384r1-priv-key.pem
+
+# Test ECDSA P-384 with async mode
+./qatengine_test -k /opt/ec-secp384r1-priv-key.pem -a
+```
+
+<Warning>
+  The private keys mentioned in examples are for demonstration only. Use your own locally generated or existing keys.
+</Warning>
+
+<Info>
+  Async mode cannot be used with the BoringSSL default method when both QAT_HW and QAT_SW are disabled.
+</Info>
+
+### Debug Mode
+
+For detailed debug information, enable QAT debug mode during configuration:
+
+```bash
+./configure --enable-qat_debug ...
+```
+
+## Use in Applications
+
+The example test code in `test_bssl/` is exclusively for functional testing of QATEngine APIs with BoringSSL enabled. For production use:
+
+1. Link your application against `libqatengine.so`
+2. Link BoringSSL libraries: `libcrypto.so`, `libssl.so`, `libdecrepit.so`
+3. Use BoringSSL's private key method API to register QAT acceleration
+4. Ensure the BoringSSL library path is in `LD_LIBRARY_PATH`
+
+### Library Path Setup
+
+```bash
+export LD_LIBRARY_PATH=<path/to/boringssl>/lib:$LD_LIBRARY_PATH
+```
+
+## NGINX Integration
+
+When using QAT BoringSSL Library with NGINX:
+
+1. Build NGINX against your BoringSSL installation
+2. Configure NGINX to load the QAT engine library
+3. Set SSL certificate and key paths in NGINX configuration
+4. Ensure all library paths are accessible
+
+Refer to NGINX documentation for BoringSSL-specific build instructions.

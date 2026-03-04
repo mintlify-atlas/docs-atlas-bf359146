@@ -1,0 +1,264 @@
+---
+title: QAT SW Asymmetric Cryptography
+description: Multi-buffer accelerated asymmetric cryptographic operations using Intel Crypto Multi-buffer library
+---
+
+# QAT SW Asymmetric Cryptography
+
+The Intel QAT OpenSSL Engine provides software acceleration for asymmetric cryptographic operations using the Intel Crypto Multi-buffer library. These operations leverage Intel AVX-512 Integer Fused Multiply Add (IFMA) instructions for parallel processing.
+
+## Overview
+
+QAT SW asymmetric acceleration batches multiple requests and processes them in parallel using AVX-512 vector instructions. The implementation uses OpenSSL's asynchronous infrastructure to queue up to 8 requests and submit them to the Crypto Multi-buffer API.
+
+<Note>
+QAT SW multi-buffer acceleration is most beneficial in asynchronous mode with many parallel connections to fully utilize multibuffer operations.
+</Note>
+
+## Supported Algorithms
+
+### RSA
+
+Software-accelerated RSA operations for specific key sizes.
+
+**Supported Key Sizes:**
+- RSA-2048 (2048 bits)
+- RSA-3072 (3072 bits)
+- RSA-4096 (4096 bits)
+
+**Operations:**
+- Public encryption
+- Private decryption
+- Public decryption (signature verification)
+- Private encryption (signing)
+
+**Padding Schemes:**
+- PKCS#1 v1.5
+- PKCS#1 OAEP
+- No padding
+- SSLv23 padding (OpenSSL 1.1.1 only)
+
+<Warning>
+Padding schemes are handled by OpenSSL rather than accelerated. Operations outside the supported key sizes (512, 1024, 8192 bits) fall back to software implementation.
+</Warning>
+
+**Implementation Details:**
+
+The RSA implementation in `qat_sw_rsa.c` uses the crypto_mb/rsa.h API:
+
+```c
+// Supported key lengths
+#define RSA_2K_LENGTH  256  // 2048 bits
+#define RSA_3K_LENGTH  384  // 3072 bits  
+#define RSA_4K_LENGTH  512  // 4096 bits
+
+// Range check for multibuffer acceleration
+static inline int multibuff_rsa_range_check(int len)
+{
+    if (len == RSA_2K_LENGTH || len == RSA_3K_LENGTH ||
+        len == RSA_4K_LENGTH) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+```
+
+### ECDH (Elliptic Curve Diffie-Hellman)
+
+Key exchange using elliptic curve cryptography.
+
+**Supported Curves:**
+
+| Curve | Type | Bits | NID |
+|-------|------|------|-----|
+| X25519 | Montgomery | 256 | NID_X25519 |
+| P-256 | NIST Prime | 256 | NID_X9_62_prime256v1 |
+| P-384 | NIST Prime | 384 | NID_secp384r1 |
+| SM2 | Chinese Standard | 256 | NID_sm2 |
+
+**Use Cases:**
+- TLS/SSL key exchange
+- Secure key agreement
+- Forward secrecy
+
+**Performance Characteristics:**
+- Batches up to 8 operations
+- Uses AVX-512 IFMA instructions
+- Asynchronous processing for optimal throughput
+
+### ECDSA (Elliptic Curve Digital Signature Algorithm)
+
+Digital signature generation and verification.
+
+**Supported Curves:**
+
+| Curve | Type | Bits | Operations |
+|-------|------|------|------------|
+| P-256 | NIST Prime | 256 | Sign, Verify |
+| P-384 | NIST Prime | 384 | Sign, Verify |
+| SM2 | Chinese Standard | 256 | Sign, Verify |
+
+**Operations:**
+- **Sign**: Generate digital signatures
+- **Verify**: Verify digital signatures
+
+**Implementation Details:**
+
+The EC implementation in `qat_sw_ec.c` checks curve support:
+
+```c
+static inline int mb_ec_check_curve(int curve_type)
+{
+    int ret = 0;
+
+    switch (curve_type) {
+    case NID_X9_62_prime256v1:
+        if (mbx_get_algo_info(MBX_ALGO_ECDSA_NIST_P256))
+            ret = EC_P256;
+        break;
+    case NID_secp384r1:
+        if (mbx_get_algo_info(MBX_ALGO_ECDSA_NIST_P384))
+            ret = EC_P384;
+        break;
+    case NID_sm2:
+        if (mbx_get_algo_info(MBX_ALGO_EC_SM2))
+            ret = EC_SM2;
+        break;
+    default:
+        break;
+    }
+    return ret;
+}
+```
+
+### SM2
+
+Chinese national standard for public key cryptography.
+
+**Capabilities:**
+- Digital signatures (sign/verify)
+- Key exchange (ECDH)
+- Encryption/decryption
+
+**Features:**
+- Multi-buffer acceleration using crypto_mb/ec_sm2.h
+- OpenSSL 3.0 provider support
+- Distinguishing Identifier (ID) support per ISO/IEC 15946-3
+
+**SM2 Context:**
+```c
+typedef struct {
+    EC_GROUP *gen_group;      // Key and paramgen group
+    const EVP_MD *md;         // Message digest
+    uint8_t *id;              // Distinguishing Identifier
+    size_t id_len;            // ID length
+    int id_set;               // ID set indicator
+} QAT_SM2_PKEY_CTX;
+```
+
+## Performance Characteristics
+
+### Batching
+
+All QAT SW asymmetric operations use batching:
+- **Batch size**: Up to 8 requests (MULTIBUFF_BATCH)
+- **Processing**: Parallel execution using AVX-512
+- **Queue management**: Per-thread queues for RSA, ECDH, ECDSA
+
+### Asynchronous Operation
+
+<Tip>
+For optimal performance, use asynchronous mode with multiple concurrent operations:
+</Tip>
+
+```bash
+# Example: RSA with async jobs
+openssl speed -provider qatprovider -elapsed -async_jobs 8 rsa2048
+
+# Example: ECDSA with async jobs  
+openssl speed -provider qatprovider -elapsed -async_jobs 8 ecdsap256
+```
+
+### System Requirements
+
+The following CPU instruction sets are required:
+- **AVX512F** - AVX-512 Foundation
+- **AVX512_IFMA** - Integer Fused Multiply Add
+- **AVX2** - Advanced Vector Extensions 2
+
+<Warning>
+QAT SW features are only supported on systems with Intel AVX-512 support. Operations will fall back to standard OpenSSL implementation on unsupported hardware.
+</Warning>
+
+## Algorithm Selection
+
+Control which algorithms are accelerated using the SW_ALGO_BITMAP:
+
+```c
+// Enable/disable specific algorithms at runtime
+ENGINE_ctrl_cmd(engine, "SW_ALGO_BITMAP", 0, bitmap, NULL, 0);
+```
+
+See [Engine Control Commands](/api/engine-ctrl) for details.
+
+## FIPS Support
+
+In FIPS mode, QAT SW supports:
+- RSA (2048, 3072, 4096 bits)
+- ECDSA (P-256, P-384)
+- ECDH (P-256, P-384, X25519)
+- SHA2 operations
+- AES-GCM
+
+## Code Examples
+
+### RSA Key Generation and Signing
+
+```c
+#include <openssl/engine.h>
+#include <openssl/rsa.h>
+
+ENGINE *e = ENGINE_by_id("qatengine");
+ENGINE_init(e);
+
+// Generate RSA key
+RSA *rsa = RSA_new();
+BIGNUM *bn = BN_new();
+BN_set_word(bn, RSA_F4);
+RSA_generate_key_ex(rsa, 2048, bn, NULL);
+
+// Use the key for operations
+// ...
+
+RSA_free(rsa);
+BN_free(bn);
+ENGINE_finish(e);
+```
+
+### ECDH Key Exchange
+
+```c
+#include <openssl/ec.h>
+#include <openssl/engine.h>
+
+ENGINE *e = ENGINE_by_id("qatengine");
+ENGINE_init(e);
+
+// Create EC key for P-256
+EC_KEY *key = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
+EC_KEY_generate_key(key);
+
+// Perform ECDH key derivation
+// ...
+
+EC_KEY_free(key);
+ENGINE_finish(e);
+```
+
+## See Also
+
+- [QAT SW Symmetric Cryptography](/api/qat-sw/symmetric)
+- [QAT SW Hashing](/api/qat-sw/hashing)
+- [Engine Control Commands](/api/engine-ctrl)
+- [Provider Interface](/api/provider-interface)

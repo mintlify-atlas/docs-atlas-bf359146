@@ -1,0 +1,156 @@
+---
+title: 'FIPS 140-3 Certification'
+description: 'Build and configure QAT Engine for FIPS 140-3 Level-1 compliance'
+---
+
+## Overview
+
+Intel QAT OpenSSL Engine contains changes to comply with FIPS 140-3 Level-1 Certification requirements using QAT Provider against OpenSSL 3.0.8.
+
+<Info>
+  Version v1.3.1 satisfies FIPS 140-3 Level-1 certification requirements but is not yet FIPS certified. The FIPS 140-3 certification process is underway.
+</Info>
+
+## Building with FIPS Support
+
+FIPS support requires both provider interface and FIPS configuration flags:
+
+```bash
+./configure \
+  --enable-qat_provider \
+  --enable-qat_fips \
+  [other configuration options]
+```
+
+**Requirements:**
+- OpenSSL 3.0 or later
+- Provider interface enabled (`--enable-qat_provider`)
+- FIPS flag enabled (`--enable-qat_fips`)
+
+### Building the FIPS RPM
+
+The FIPS build is available as an RPM using the specfile:
+
+```bash
+rpmbuild -ba fips/qatengine_fips.spec
+```
+
+The RPM build enables:
+- QAT_HW and QAT_SW coexistence
+- FIPS compliance flags
+- Required self-tests and integrity checks
+
+## Supported Algorithms in FIPS Mode
+
+### QAT_HW Algorithms
+
+When using hardware acceleration, the following algorithms are FIPS-compliant:
+
+| Algorithm Type | Algorithms |
+|----------------|------------|
+| Asymmetric | RSA, ECDSA, ECDH, ECDHX25519, ECDHX448, DSA, DH |
+| Key Derivation | TLS 1.2 KDF (PRF), TLS 1.3 KDF (HKDF) |
+| Hashing | SHA-3 |
+| Symmetric | AES-GCM |
+
+### QAT_SW Algorithms
+
+When using software acceleration, the following algorithms are FIPS-compliant:
+
+| Algorithm Type | Algorithms |
+|----------------|------------|
+| Asymmetric | RSA, ECDSA, ECDH, ECDHX25519 |
+| Hashing | SHA-2 |
+| Symmetric | AES-GCM |
+
+## Self-Tests and Integrity Checks
+
+When FIPS mode is enabled, the QAT Engine performs:
+
+### Self-Tests
+
+- **Power-On Self-Tests (POST)**: Executed automatically when the provider is loaded
+- **Known Answer Tests (KAT)**: Validates cryptographic algorithm implementations
+- **Pairwise Consistency Tests**: Ensures key pair generation produces valid pairs
+
+### Integrity Checks
+
+- **Module Integrity Verification**: Uses HMAC-SHA256 to verify the module has not been tampered with
+- **Automatic Verification**: Performed at provider initialization
+
+### Operational Requirements
+
+<Warning>
+  If any self-test or integrity check fails, the module will refuse to operate and all cryptographic operations will be blocked.
+</Warning>
+
+The engine will:
+1. Run self-tests on initialization
+2. Verify module integrity using embedded HMAC
+3. Validate all cryptographic operations comply with FIPS requirements
+4. Restrict operations to FIPS-approved algorithms only
+
+## FIPS Mode Configuration
+
+When running with FIPS enabled:
+
+### OpenSSL Configuration
+
+Configure OpenSSL to use the FIPS provider:
+
+```ini
+[openssl_init]
+providers = provider_sect
+
+[provider_sect]
+qatprovider = qatprovider_sect
+default = default_sect
+
+[qatprovider_sect]
+activate = 1
+fips = 1
+```
+
+### Testing FIPS Mode
+
+Verify FIPS mode is active:
+
+```bash
+# Test RSA with QAT_HW in FIPS mode
+openssl speed -provider qatprovider -elapsed -async_jobs 72 rsa2048
+
+# Test RSA with QAT_SW in FIPS mode
+openssl speed -provider qatprovider -elapsed -async_jobs 8 rsa2048
+```
+
+### Runtime Verification
+
+Check that FIPS mode is enabled:
+
+```bash
+openssl list -providers
+```
+
+The output should indicate the qatprovider is loaded with FIPS mode active.
+
+## Compliance Notes
+
+<Info>
+  The QAT Engine FIPS implementation satisfies CMVP (Cryptographic Module Validation Program) and CAVP (Cryptographic Algorithm Validation Program) requirements.
+</Info>
+
+### FIPS 140-3 Requirements Met
+
+- **Level 1**: Physical security, approved algorithms, and self-tests
+- **Cryptographic Module Specification**: Complete documentation of security boundaries
+- **Module Interfaces**: Clear definition of data input/output and control interfaces  
+- **Roles and Services**: Defined user and crypto officer roles
+- **Software Security**: Code integrity and error handling
+- **Operational Environment**: Validated on specific platforms with required configurations
+
+### Restrictions in FIPS Mode
+
+- Only FIPS-approved algorithms are available
+- Non-approved algorithms are disabled
+- Custom configurations that bypass FIPS checks are prevented
+- Self-tests cannot be disabled or skipped

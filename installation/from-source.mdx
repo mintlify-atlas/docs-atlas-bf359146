@@ -1,0 +1,394 @@
+---
+title: Building from Source
+description: Complete guide to building QAT Engine from source code
+---
+
+## Overview
+
+QAT Engine supports various crypto libraries and QAT generations with both hardware and software acceleration. This guide covers building from source for different configurations.
+
+## Clone the Repository
+
+<Steps>
+  <Step title="Clone QAT Engine">
+    ```bash
+    git clone https://github.com/intel/QAT_Engine.git
+    cd QAT_Engine
+    ```
+  </Step>
+</Steps>
+
+<Note>
+Before proceeding, ensure you have installed the required prerequisites:
+- autoconf
+- automake
+- libtool
+- pkg-config
+</Note>
+
+## Build with Make Depend Target
+
+The `make depend` target automatically clones and builds dependent libraries (OpenSSL, QAT_HW, QAT_SW) based on your configure flags.
+
+<Steps>
+  <Step title="Initialize submodules">
+    ```bash
+    git submodule update --init
+    ```
+  </Step>
+  
+  <Step title="Run autogen">
+    ```bash
+    ./autogen.sh
+    ```
+  </Step>
+  
+  <Step title="Configure the build">
+    ```bash
+    ./configure \
+      --with-qat_hw_dir=/QAT \
+      --enable-qat_sw \
+      --with-openssl_install_dir=/usr/local/ssl
+    ```
+    
+    <Info>
+    - `--with-qat_hw_dir`: Only needed for QAT_HW platforms
+    - `--enable-qat_sw`: Only needed for QAT_SW platforms
+    - `--with-openssl_install_dir`: Optional, uses system OpenSSL if omitted
+    </Info>
+  </Step>
+  
+  <Step title="Build dependencies and engine">
+    ```bash
+    make depend
+    make
+    make install
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+**Limitations of make depend:**
+- Not supported on FreeBSD OS
+- Not supported in virtualized environments
+- Not supported for BoringSSL or BabaSSL
+- Not supported for qatlib dependency builds
+</Warning>
+
+### What make depend does
+
+- Clones dependent libraries to appropriate versions
+- Installs QAT_HW driver to `/QAT`
+- Installs QAT_SW to default paths:
+  - cryptography-primitives: `/usr/local`
+  - ipsec_mb: `/usr`
+- Installs `qatengine.so` to OpenSSL engines directory
+
+## Manual Installation
+
+For more control over the build process, install prerequisites manually before building.
+
+### Install OpenSSL
+
+<Steps>
+  <Step title="Clone OpenSSL">
+    ```bash
+    git clone https://github.com/openssl/openssl.git
+    cd openssl
+    ```
+  </Step>
+  
+  <Step title="Checkout desired version">
+    ```bash
+    git checkout openssl-3.0.14  # or latest stable tag
+    ```
+    
+    <Tip>
+    Use a version from the [supported list](/installation/requirements#crypto-libraries).
+    </Tip>
+  </Step>
+  
+  <Step title="Configure and build">
+    ```bash
+    ./config --prefix=/usr/local/ssl -Wl,-rpath,/usr/local/ssl/lib64
+    make
+    sudo make install
+    ```
+  </Step>
+  
+  <Step title="Set environment variable">
+    ```bash
+    export OPENSSL_ENGINES=/usr/local/ssl/lib64/engines-3
+    ```
+    
+    <Note>
+    Add this to your `.bashrc` or `.profile` for persistence.
+    </Note>
+  </Step>
+</Steps>
+
+<Accordion title="Using Tongsuo (BabaSSL)">
+  If you prefer Tongsuo instead of OpenSSL:
+  
+  ```bash
+  git clone https://github.com/Tongsuo-Project/Tongsuo.git
+  cd Tongsuo
+  git checkout 8.4.0
+  ./config --prefix=/usr/local/ssl -Wl,-rpath,/usr/local/ssl/lib64
+  make
+  sudo make install
+  ```
+</Accordion>
+
+### Install QAT Hardware Dependencies
+
+<Tabs>
+  <Tab title="OOT Driver">
+    Install the QAT Hardware driver from the Getting Started Guide for your device:
+    
+    <Card title="Intel QuickAssist Technology" icon="download" href="https://www.intel.com/content/www/us/en/developer/topic-technology/open/quick-assist-technology/overview.html">
+      Download drivers for QAT 1.x or QAT 2.x devices
+    </Card>
+    
+    **USDM Component Configuration:**
+    
+    For multi-thread use cases, enable lockless thread-specific memory:
+    
+    ```bash
+    ./configure --enable-icp-thread-specific-usdm --enable-128k-slab
+    make
+    sudo make install
+    ```
+  </Tab>
+  
+  <Tab title="In-tree Driver (qatlib)">
+    For 4xxx devices with in-tree driver:
+    
+    ```bash
+    git clone https://github.com/intel/qatlib.git
+    cd qatlib
+    ./autogen.sh
+    ./configure
+    make
+    sudo make install
+    ```
+    
+    <Card title="QATlib Installation" icon="book" href="https://github.com/intel/qatlib/blob/main/INSTALL">
+      Complete qatlib configuration and installation guide
+    </Card>
+  </Tab>
+</Tabs>
+
+<Accordion title="Shared Virtual Memory (SVM) - QAT Gen4 Only">
+  QAT gen4 devices (4xxx) support Shared Virtual Memory for zero-copy operations:
+  
+  **Prerequisites:**
+  - Enable in BIOS:
+    - Support for Shared Virtual Memory with Intel IOMMU
+    - Enable VT-d
+    - Enable ATS
+  
+  **Driver Configuration (OOT driver only):**
+  
+  Set in QAT device config files:
+  ```
+  SvmEnabled = 1
+  ATEnabled = 1
+  ```
+  
+  <Warning>
+  SVM is only available with OOT driver packages, not qatlib in-tree driver.
+  </Warning>
+</Accordion>
+
+### Install QAT Software Dependencies
+
+<Steps>
+  <Step title="Install Crypto Multi-buffer">
+    ```bash
+    git clone https://github.com/intel/cryptography-primitives.git
+    cd cryptography-primitives/sources/ippcp/crypto_mb
+    cmake . -B_build -DCMAKE_INSTALL_PREFIX=/usr/local
+    cmake --build _build
+    sudo cmake --install _build
+    ```
+    
+    <Warning>
+    Newer versions install to `/usr/local/lib/intel64`. Copy libraries to `/usr/local/lib`:
+    ```bash
+    sudo cp /usr/local/lib/intel64/*.so* /usr/local/lib/
+    ```
+    </Warning>
+  </Step>
+  
+  <Step title="Install IPsec Multi-buffer">
+    ```bash
+    git clone https://github.com/intel/intel-ipsec-mb.git
+    cd intel-ipsec-mb
+    make
+    sudo make install PREFIX=/usr
+    ```
+  </Step>
+</Steps>
+
+## Build QAT Engine for QAT_HW
+
+<Tabs>
+  <Tab title="OOT Driver">
+    <Steps>
+      <Step title="Configure">
+        ```bash
+        cd /QAT_Engine
+        ./autogen.sh
+        ./configure \
+          --with-qat_hw_dir=/QAT \
+          --with-openssl_install_dir=/usr/local/ssl
+        ```
+        
+        <Info>
+        Omit `--with-openssl_install_dir` to use system OpenSSL.
+        </Info>
+      </Step>
+      
+      <Step title="Build and install">
+        ```bash
+        make
+        sudo make install
+        ```
+      </Step>
+      
+      <Step title="Update QAT driver config">
+        ```bash
+        ./update_config.sh multi_thread
+        # or for multi-process:
+        # ./update_config.sh multi_process asym 1 64 0
+        ```
+        
+        <Accordion title="update_config.sh options">
+          **Arguments:**
+          - `<Mode>`: `multi_process` or `multi_thread`
+          - `<ServicesEnabled>`: `'asym;sym'`, `'asym'`, `'sym'`, `'asym;dc'`, `'sym;dc'`
+          - `<NumberCyInstances>`: Number of crypto instances
+          - `<NumProcesses>`: Number of processes
+          - `<LimitDevAccess>`: 0 or 1
+        </Accordion>
+      </Step>
+    </Steps>
+  </Tab>
+  
+  <Tab title="In-tree Driver (qatlib)">
+    <Steps>
+      <Step title="Configure">
+        ```bash
+        cd /QAT_Engine
+        ./autogen.sh
+        ./configure --with-qat_hw_dir=/usr/local
+        ```
+        
+        <Note>
+        qatlib typically installs to `/usr/local`. Policies are configured via `/etc/sysconfig/qat`.
+        </Note>
+      </Step>
+      
+      <Step title="Build and install">
+        ```bash
+        make
+        sudo make install
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Build QAT Engine for QAT_SW
+
+<Steps>
+  <Step title="Configure">
+    ```bash
+    cd /QAT_Engine
+    ./autogen.sh
+    ./configure --enable-qat_sw
+    ```
+    
+    <Info>
+    If QAT_HW qatlib is installed and you want QAT_SW only:
+    ```bash
+    ./configure --enable-qat_sw --disable-qat_hw
+    ```
+    </Info>
+  </Step>
+  
+  <Step title="Build and install">
+    ```bash
+    make
+    sudo make install
+    ```
+  </Step>
+</Steps>
+
+<Accordion title="Custom library paths">
+  If crypto_mb or ipsec_mb are installed to custom locations:
+  
+  ```bash
+  ./configure \
+    --enable-qat_sw \
+    --with-qat_sw_crypto_mb_install_dir=/custom/path \
+    --with-qat_sw_ipsec_mb_install_dir=/custom/path
+  ```
+</Accordion>
+
+## Build QAT Engine with QAT_HW & QAT_SW Co-existence
+
+<Steps>
+  <Step title="Configure for co-existence">
+    ```bash
+    cd /QAT_Engine
+    ./autogen.sh
+    ./configure \
+      --with-qat_hw_dir=/QAT \
+      --enable-qat_sw \
+      --with-openssl_install_dir=/usr/local/ssl
+    ```
+  </Step>
+  
+  <Step title="Build and install">
+    ```bash
+    make
+    sudo make install
+    ```
+  </Step>
+</Steps>
+
+<Card title="Co-existence Behavior" icon="code-merge" href="/concepts/coexistence">
+  Learn about the default behavior and working mechanism of QAT_HW and QAT_SW co-existence
+</Card>
+
+## Verification
+
+After installation, verify the engine is working:
+
+```bash
+openssl engine -t -c qatengine
+```
+
+Expected output:
+```
+(qatengine) Intel QuickAssist Technology Engine
+     [RSA, DSA, DH, AES-128-CBC-HMAC-SHA1, ...]
+     [ available ]
+```
+
+<Tip>
+For detailed configuration options, see the [Build Options](/installation/build-options) reference.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Build Options" icon="wrench" href="/installation/build-options">
+    Explore all available configure flags
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/configuration">
+    Configure QAT Engine runtime behavior
+  </Card>
+</CardGroup>

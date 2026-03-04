@@ -1,0 +1,158 @@
+---
+title: "Introduction"
+description: "Overview of Intel QAT Engine for cryptographic acceleration on Intel platforms"
+---
+
+## What is Intel QAT Engine?
+
+Intel QuickAssist Technology (QAT) OpenSSL Engine is a plugin that provides cryptographic acceleration for OpenSSL-based applications. It leverages Intel QuickAssist Technology to offload compute-intensive cryptographic operations from the CPU, delivering significant performance improvements for secure communications.
+
+<CardGroup cols={2}>
+  <Card title="Hardware Acceleration" icon="microchip">
+    Offload crypto operations to dedicated QAT hardware accelerators on Intel platforms
+  </Card>
+  <Card title="Software Optimization" icon="bolt">
+    Utilize optimized CPU-based implementations using AVX-512 and Intel instruction sets
+  </Card>
+  <Card title="Seamless Integration" icon="plug">
+    Works as a drop-in plugin for OpenSSL through the engine or provider interface
+  </Card>
+  <Card title="Broad Algorithm Support" icon="shield-check">
+    Accelerate RSA, ECDH, ECDSA, AES-GCM, ChaCha20-Poly1305, and more
+  </Card>
+</CardGroup>
+
+## Architecture Overview
+
+The QAT Engine sits between your application and OpenSSL, intercepting cryptographic operations and routing them to the most appropriate acceleration path:
+
+<div className="bg-gray-50 dark:bg-[#1a1d27] rounded-lg p-6 my-6">
+  <pre className="text-sm">
+{`┌─────────────────────────────────────┐
+│  Applications (NGINX, HAProxy, etc) │
+└──────────────┬──────────────────────┘
+               │
+┌──────────────▼──────────────────────┐
+│  OpenSSL / Tongsuo / BoringSSL      │
+└──────────────┬──────────────────────┘
+               │
+┌──────────────▼──────────────────────┐
+│        Intel QAT Engine             │
+│  ┌────────────┬─────────────┐      │
+│  │  QAT_HW    │   QAT_SW    │      │
+│  │  Hardware  │   Software  │      │
+│  └────────────┴─────────────┘      │
+└──────────────┬──────────────────────┘
+               │
+┌──────────────▼──────────────────────┐
+│    Intel Platform (CPU + QAT HW)    │
+└─────────────────────────────────────┘`}
+  </pre>
+</div>
+
+## Dual Acceleration Paths
+
+<Note>
+The QAT Engine supports two distinct acceleration paths that can be used independently or together for maximum flexibility.
+</Note>
+
+### QAT_HW: Hardware Acceleration
+
+Uses dedicated Intel QuickAssist Technology hardware accelerators present in:
+- Intel Xeon Scalable Processors with C62X chipset
+- Intel QAT 4xxx Series adapters
+- Intel Atom C3000 and P5900 processors
+
+**Supported algorithms include:**
+- Asymmetric: RSA, DH, DSA, ECDH, ECDSA, X25519/X448, SM2
+- Symmetric: AES-CBC-HMAC-SHA, AES-GCM, AES-CCM, ChaCha20-Poly1305, SM4-CBC
+- Key Derivation: TLS PRF, HKDF
+- Hashing: SHA3, SM3
+
+### QAT_SW: Software Acceleration
+
+CPU-based acceleration using optimized instruction sets on 3rd Gen Intel Xeon Scalable Processors and newer:
+- Leverages AVX-512 and vector instructions
+- Uses Intel Crypto Multi-buffer library
+- Intel IPSec Multi-buffer library for AES-GCM
+
+**Supported algorithms include:**
+- Asymmetric: RSA (2048/3072/4096), ECDH (X25519, P-256, P-384, SM2), ECDSA (P-256, P-384, SM2)
+- Symmetric: AES-GCM (128/192/256), SM4-CBC/GCM/CCM
+- Hashing: SM3
+
+## Key Capabilities
+
+<AccordionGroup>
+  <Accordion title="Asynchronous Operations" icon="rotate">
+    Non-blocking asynchronous job handling allows applications to submit multiple crypto operations concurrently, maximizing throughput in multi-threaded environments. The engine supports OpenSSL's async job infrastructure with configurable async_jobs parameters.
+  </Accordion>
+  
+  <Accordion title="Pipelined Processing" icon="layer-group">
+    OpenSSL pipelining enables parallel processing of large data buffers by splitting them into smaller chunks. The QAT Engine supports up to 32 pipelines with 16KB per pipeline for chained cipher operations.
+  </Accordion>
+  
+  <Accordion title="Software Fallback" icon="shield">
+    The heartbeat feature monitors QAT device health and automatically falls back to software implementations if hardware becomes unavailable, ensuring continuous operation even during device resets or failures.
+  </Accordion>
+  
+  <Accordion title="OpenSSL 3.0 Provider" icon="plug">
+    Native provider interface support for OpenSSL 3.0 alongside the traditional engine interface, providing a modernized integration path for new applications.
+  </Accordion>
+  
+  <Accordion title="FIPS 140-3 Ready" icon="certificate">
+    Built with FIPS 140-3 Level-1 certification requirements including self-tests, integrity checks, and CMVP/CAVP compliance for regulated environments.
+  </Accordion>
+  
+  <Accordion title="Multi-Crypto Library Support" icon="code">
+    Works with OpenSSL, Tongsuo (BabaSSL), and BoringSSL, providing flexibility for different deployment scenarios and application requirements.
+  </Accordion>
+</AccordionGroup>
+
+## Use Cases
+
+The QAT Engine is ideal for workloads that require high-throughput cryptographic operations:
+
+<CardGroup cols={2}>
+  <Card title="Web Servers" icon="server">
+    NGINX and Apache handling thousands of TLS connections per second
+  </Card>
+  <Card title="Load Balancers" icon="gauge">
+    HAProxy terminating SSL/TLS at scale
+  </Card>
+  <Card title="VPN Gateways" icon="shield-halved">
+    IPsec and SSL VPN concentrators
+  </Card>
+  <Card title="Content Delivery" icon="network-wired">
+    CDN edge servers with HTTPS traffic
+  </Card>
+</CardGroup>
+
+## Performance Benefits
+
+Hardware acceleration with QAT can deliver:
+- **10-100x** throughput improvement for RSA operations
+- **2-10x** improvement for ECDH/ECDSA operations
+- **2-5x** improvement for AES-GCM bulk encryption
+- Significantly reduced CPU utilization, freeing cycles for application logic
+
+<Info>
+Actual performance gains depend on your specific workload, hardware configuration, algorithm choice, and async_jobs tuning. See the [performance testing](/quickstart#run-performance-tests) section for benchmarking guidance.
+</Info>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get up and running with QAT Engine in minutes
+  </Card>
+  <Card title="Installation Guide" icon="download" href="/installation/requirements">
+    Detailed installation instructions for your platform
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/concepts/qat-hw">
+    Learn about QAT_HW and QAT_SW acceleration
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/qat-hw/asymmetric">
+    Explore the complete API documentation
+  </Card>
+</CardGroup>

@@ -1,0 +1,343 @@
+---
+title: Hashing Operations
+description: QAT Hardware acceleration for SHA3 and SM3 hash algorithms
+---
+
+The Intel QAT Engine provides hardware acceleration for modern cryptographic hash functions including the SHA-3 family and SM3.
+
+## SHA-3 (Secure Hash Algorithm 3)
+
+SHA-3 is the latest member of the Secure Hash Algorithm family, standardized by NIST in 2015 (FIPS 202). It is based on the Keccak algorithm.
+
+### Supported Variants
+
+| Algorithm | Output Size | Default Enabled | Platform Support |
+|-----------|-------------|-----------------|------------------|
+| SHA3-224  | 224 bits (28 bytes) | No (insecure) | QAT 1.8+, QAT 2.0, qatlib |
+| SHA3-256  | 256 bits (32 bytes) | No (experimental) | QAT 1.8+, QAT 2.0, qatlib |
+| SHA3-384  | 384 bits (48 bytes) | No (experimental) | QAT 1.8+, QAT 2.0, qatlib |
+| SHA3-512  | 512 bits (64 bytes) | No (experimental) | QAT 1.8+, QAT 2.0, qatlib |
+
+### Platform Availability
+
+- **QAT 1.7**: Not supported
+- **QAT 1.8+**: All SHA-3 variants available (disabled by default)
+- **QAT 2.0**: All SHA-3 variants available (disabled by default)
+- **qatlib**: All SHA-3 variants available (disabled by default)
+
+### Configuration
+
+SHA-3 algorithms are experimental and disabled by default. To enable:
+
+1. Build QAT Engine with appropriate flags
+2. Configure via environment variables or configuration file
+
+Refer to the [configuration guide](/installation/build-options) for platform-specific instructions.
+
+### Usage with OpenSSL EVP API
+
+#### Computing a SHA3-256 Hash
+
+```c
+#include <openssl/evp.h>
+#include <openssl/engine.h>
+
+ENGINE *e = ENGINE_by_id("qatengine");
+if (!e) {
+    // Handle error
+}
+
+if (!ENGINE_init(e)) {
+    // Handle error
+}
+
+EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
+if (!mdctx) {
+    // Handle error
+}
+
+const EVP_MD *md = EVP_sha3_256();
+
+// Initialize digest
+if (EVP_DigestInit_ex(mdctx, md, e) != 1) {
+    // Handle error
+}
+
+// Update with data (can be called multiple times)
+unsigned char data[] = "Hello, World!";
+if (EVP_DigestUpdate(mdctx, data, sizeof(data) - 1) != 1) {
+    // Handle error
+}
+
+// Finalize and get hash
+unsigned char hash[32];  // SHA3-256 = 32 bytes
+unsigned int hash_len;
+if (EVP_DigestFinal_ex(mdctx, hash, &hash_len) != 1) {
+    // Handle error
+}
+
+EVP_MD_CTX_free(mdctx);
+ENGINE_finish(e);
+ENGINE_free(e);
+```
+
+#### Computing SHA3-512 Hash
+
+```c
+EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
+const EVP_MD *md = EVP_sha3_512();
+
+EVP_DigestInit_ex(mdctx, md, e);
+
+unsigned char data[1024];
+EVP_DigestUpdate(mdctx, data, sizeof(data));
+
+unsigned char hash[64];  // SHA3-512 = 64 bytes
+unsigned int hash_len;
+EVP_DigestFinal_ex(mdctx, hash, &hash_len);
+
+EVP_MD_CTX_free(mdctx);
+```
+
+### Incremental Hashing
+
+SHA-3 supports incremental hashing for large data:
+
+```c
+EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
+const EVP_MD *md = EVP_sha3_256();
+
+EVP_DigestInit_ex(mdctx, md, e);
+
+// Process data in chunks
+unsigned char chunk[4096];
+size_t bytes_read;
+
+FILE *fp = fopen("large_file.dat", "rb");
+while ((bytes_read = fread(chunk, 1, sizeof(chunk), fp)) > 0) {
+    EVP_DigestUpdate(mdctx, chunk, bytes_read);
+}
+fclose(fp);
+
+// Get final hash
+unsigned char hash[32];
+unsigned int hash_len;
+EVP_DigestFinal_ex(mdctx, hash, &hash_len);
+
+EVP_MD_CTX_free(mdctx);
+```
+
+### One-Shot Hashing
+
+For small data, use the convenience function:
+
+```c
+#include <openssl/evp.h>
+
+unsigned char data[] = "Quick hash";
+unsigned char hash[32];
+unsigned int hash_len;
+
+EVP_Digest(data, sizeof(data) - 1, hash, &hash_len, EVP_sha3_256(), e);
+```
+
+## SM3
+
+SM3 is a cryptographic hash function published as a Chinese National Standard (GM/T 0004-2012).
+
+### Supported Variants
+
+| Algorithm | Output Size | Default Enabled | Platform Support |
+|-----------|-------------|-----------------|------------------|
+| SM3       | 256 bits (32 bytes) | No (experimental) | QAT 1.8+, QAT 2.0 |
+
+### Platform Availability
+
+- **QAT 1.7**: Not supported
+- **QAT 1.8+**: Available (disabled by default, experimental)
+- **QAT 2.0**: Available (disabled by default, experimental)
+- **qatlib**: Not available
+
+### Configuration
+
+SM3 is experimental and disabled by default. Enable through build configuration.
+
+### Usage with OpenSSL EVP API
+
+```c
+#include <openssl/evp.h>
+#include <openssl/engine.h>
+
+ENGINE *e = ENGINE_by_id("qatengine");
+ENGINE_init(e);
+
+EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
+const EVP_MD *md = EVP_sm3();  // SM3 digest
+
+// Initialize
+if (EVP_DigestInit_ex(mdctx, md, e) != 1) {
+    // Handle error
+}
+
+// Update with data
+unsigned char data[] = "SM3 test data";
+if (EVP_DigestUpdate(mdctx, data, sizeof(data) - 1) != 1) {
+    // Handle error
+}
+
+// Finalize
+unsigned char hash[32];  // SM3 = 32 bytes
+unsigned int hash_len;
+if (EVP_DigestFinal_ex(mdctx, hash, &hash_len) != 1) {
+    // Handle error
+}
+
+EVP_MD_CTX_free(mdctx);
+ENGINE_finish(e);
+ENGINE_free(e);
+```
+
+## General Hash Operations
+
+### Copying Hash Context
+
+You can copy a hash context to compute hashes of related data:
+
+```c
+EVP_MD_CTX *mdctx1 = EVP_MD_CTX_new();
+EVP_MD_CTX *mdctx2 = EVP_MD_CTX_new();
+
+const EVP_MD *md = EVP_sha3_256();
+EVP_DigestInit_ex(mdctx1, md, e);
+
+// Add common prefix
+unsigned char prefix[] = "Common prefix";
+EVP_DigestUpdate(mdctx1, prefix, sizeof(prefix) - 1);
+
+// Copy context
+EVP_MD_CTX_copy_ex(mdctx2, mdctx1);
+
+// Continue with different data
+unsigned char data1[] = "Data 1";
+EVP_DigestUpdate(mdctx1, data1, sizeof(data1) - 1);
+
+unsigned char data2[] = "Data 2";
+EVP_DigestUpdate(mdctx2, data2, sizeof(data2) - 1);
+
+// Get two different hashes with same prefix
+unsigned char hash1[32], hash2[32];
+unsigned int len;
+EVP_DigestFinal_ex(mdctx1, hash1, &len);
+EVP_DigestFinal_ex(mdctx2, hash2, &len);
+
+EVP_MD_CTX_free(mdctx1);
+EVP_MD_CTX_free(mdctx2);
+```
+
+### HMAC with SHA-3
+
+Combine SHA-3 with HMAC for message authentication:
+
+```c
+#include <openssl/hmac.h>
+
+unsigned char key[32];  // HMAC key
+unsigned char data[] = "Message to authenticate";
+unsigned char hmac_result[32];
+unsigned int hmac_len;
+
+HMAC(EVP_sha3_256(), key, sizeof(key), data, sizeof(data) - 1, 
+     hmac_result, &hmac_len);
+```
+
+## Performance Considerations
+
+### When to Use Hardware Acceleration
+
+Hardware acceleration provides benefits when:
+
+- **Hashing large amounts of data** (> 4KB)
+- **High-throughput scenarios** with many concurrent hash operations
+- **Server workloads** processing many requests
+
+### Optimal Usage Patterns
+
+1. **Batch Processing**: Process multiple messages to amortize setup costs
+2. **Large Buffers**: Use larger buffer sizes (8KB-64KB) for EVP_DigestUpdate
+3. **Asynchronous Mode**: Enable async operations for better throughput
+
+### Performance Tuning
+
+```c
+// Use larger buffer sizes for better performance
+#define OPTIMAL_BUFFER_SIZE (64 * 1024)  // 64KB
+
+unsigned char buffer[OPTIMAL_BUFFER_SIZE];
+while (bytes_read = fread(buffer, 1, sizeof(buffer), fp)) {
+    EVP_DigestUpdate(mdctx, buffer, bytes_read);
+}
+```
+
+## Software Fallback
+
+Hash operations automatically fall back to OpenSSL software implementation when:
+
+- QAT hardware is unavailable
+- Algorithm is disabled or unsupported
+- Request queue is full
+- Small data sizes (below hardware threshold)
+
+## Error Handling
+
+Proper error handling is essential:
+
+```c
+if (EVP_DigestInit_ex(mdctx, md, e) != 1) {
+    unsigned long err = ERR_get_error();
+    char err_buf[256];
+    ERR_error_string_n(err, err_buf, sizeof(err_buf));
+    fprintf(stderr, "Hash init error: %s\n", err_buf);
+    // Cleanup and return
+}
+```
+
+## Use Cases
+
+### SHA-3
+
+- **Digital signatures**: Input to signature algorithms
+- **Data integrity**: Verify file or message integrity
+- **Password hashing**: As part of password-based key derivation
+- **Blockchain**: Cryptographic operations in distributed ledgers
+- **Certificate generation**: Hash inputs for X.509 certificates
+
+### SM3
+
+- **Chinese cryptographic standards**: Required for compliance
+- **SM2 digital signatures**: Used with SM2 elliptic curve algorithm
+- **Government applications**: Mandated by Chinese regulations
+- **Financial services**: Banking and payment systems in China
+
+## Algorithm Characteristics
+
+### SHA-3 Family
+
+| Variant | Output Size | Block Size | Security Level |
+|---------|-------------|------------|----------------|
+| SHA3-224 | 224 bits | 1152 bits | 112 bits |
+| SHA3-256 | 256 bits | 1088 bits | 128 bits |
+| SHA3-384 | 384 bits | 832 bits  | 192 bits |
+| SHA3-512 | 512 bits | 576 bits  | 256 bits |
+
+### SM3
+
+| Property | Value |
+|----------|-------|
+| Output Size | 256 bits |
+| Block Size | 512 bits |
+| Security Level | 128 bits |
+| Standard | GM/T 0004-2012 |
+
+## Platform Support Matrix
+
+For detailed platform-specific availability and configuration options, refer to the [algorithm support table](/installation/build-options).

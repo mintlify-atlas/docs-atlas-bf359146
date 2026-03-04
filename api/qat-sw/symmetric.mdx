@@ -1,0 +1,381 @@
+---
+title: QAT SW Symmetric Cryptography
+description: Software-accelerated symmetric encryption using Intel IPsec Multi-Buffer library
+---
+
+# QAT SW Symmetric Cryptography
+
+The Intel QAT OpenSSL Engine provides software acceleration for symmetric cryptographic operations using the Intel Multi-Buffer Crypto for IPsec Library. These operations use vectorized AES instructions (VAES, AVX2, AVX-512) for high-throughput encryption and decryption.
+
+## Overview
+
+Unlike asymmetric operations, QAT SW symmetric encryption follows a **synchronous mechanism**. The implementation submits requests to the IPSec_MB library, which processes them in multiple blocks using vectorized instructions.
+
+<Note>
+AES-GCM implementation uses the Intel Multi-Buffer Crypto for IPsec Library and processes requests synchronously using vectorized AES, AVX2, and AVX-512 instructions.
+</Note>
+
+## Supported Algorithms
+
+### AES-GCM (Galois/Counter Mode)
+
+Authenticated encryption with associated data (AEAD) cipher.
+
+**Supported Key Sizes:**
+- AES-128-GCM (128-bit keys)
+- AES-192-GCM (192-bit keys)
+- AES-256-GCM (256-bit keys)
+
+**Features:**
+- Combined encryption and authentication
+- Configurable authentication tag length (0-16 bytes)
+- TLS 1.2/1.3 optimization
+- IV (Initialization Vector) management
+
+**Key Constants:**
+```c
+#define AES_KEY_SIZE_128  16  // 128-bit keys
+#define AES_KEY_SIZE_192  24  // 192-bit keys
+#define AES_KEY_SIZE_256  32  // 256-bit keys
+
+#define QAT_GCM_TAG_MIN_LEN  0   // Minimum tag length
+#define QAT_GCM_TAG_MAX_LEN  16  // Maximum tag length (128 bits)
+```
+
+**Implementation Details:**
+
+The GCM implementation in `qat_sw_gcm.c` uses Intel IPsec-MB library:
+
+```c
+#include <intel-ipsec-mb.h>
+
+// IPsec Multi-Buffer Manager
+IMB_MGR *ipsec_mgr = NULL;
+
+// Check supported NIDs
+static int qat_check_gcm_nid(int nid)
+{
+   if (nid == NID_aes_128_gcm ||
+       nid == NID_aes_192_gcm ||
+       nid == NID_aes_256_gcm)
+       return 1;
+   else
+      return 0;
+}
+```
+
+**TLS Support:**
+- TLS 1.2 record encryption/decryption
+- TLS 1.3 record encryption/decryption
+- Automatic IV handling for TLS
+- Additional Authenticated Data (AAD) processing
+
+### SM4-CBC (Cipher Block Chaining)
+
+Chinese national standard block cipher in CBC mode.
+
+**Key Features:**
+- **Block size**: 128 bits
+- **Key size**: 128 bits
+- **Multibuffer**: 16 parallel requests
+- **Support**: Tongsuo only
+
+**Implementation:**
+
+The SM4-CBC implementation uses 16-way multibuffer processing:
+
+```c
+#include "crypto_mb/sm4.h"
+
+// Processes 16 requests in parallel
+// Defined in qat_sw_sm4_cbc.c
+```
+
+<Warning>
+SM4-CBC acceleration is only available when building against Tongsuo (BabaSSL fork). It is not available with standard OpenSSL.
+</Warning>
+
+**Operations:**
+- Encryption: Plaintext → Ciphertext
+- Decryption: Ciphertext → Plaintext
+- IV (Initialization Vector) management
+
+### SM4-GCM (Galois/Counter Mode)
+
+SM4 authenticated encryption mode.
+
+**Key Features:**
+- **Block size**: 128 bits
+- **Key size**: 128 bits  
+- **Multibuffer**: 16 parallel requests
+- **AEAD**: Combined encryption and authentication
+- **Support**: Tongsuo only
+
+**Implementation:**
+
+```c
+#include "crypto_mb/sm4_gcm.h"
+
+// Multibuffer GCM operations (qat_sw_sm4_gcm.c)
+// Supports up to 16 parallel operations
+```
+
+**Features:**
+- Authentication tag generation/verification
+- Additional Authenticated Data (AAD)
+- Configurable tag length
+- IV management
+
+### SM4-CCM (Counter with CBC-MAC)
+
+SM4 authenticated encryption using counter mode with CBC-MAC.
+
+**Key Features:**
+- **Block size**: 128 bits
+- **Key size**: 128 bits
+- **Multibuffer**: 16 parallel requests
+- **AEAD**: Combined encryption and authentication
+- **Support**: Tongsuo only
+
+**Implementation:**
+
+```c
+#include "crypto_mb/sm4_ccm.h"
+
+// CCM mode implementation (qat_sw_sm4_ccm.c)
+// 16-way multibuffer processing
+```
+
+**Characteristics:**
+- Nonce-based AEAD
+- Message length encoding
+- MAC tag generation
+- Associated data support
+
+## IPSec_MB Library Usage
+
+The Intel Multi-Buffer Crypto for IPsec Library provides the core cryptographic primitives.
+
+### Library Initialization
+
+```c
+#include <intel-ipsec-mb.h>
+
+IMB_MGR *ipsec_mgr = NULL;
+
+// Initialize the library
+ipsec_mgr = alloc_mb_mgr(0);
+if (ipsec_mgr == NULL) {
+    // Handle error
+}
+
+// Initialize manager for best performance
+init_mb_mgr_auto(ipsec_mgr, NULL);
+```
+
+### Supported Operations
+
+The IPSec_MB library provides:
+- **AES-GCM**: Encryption, decryption, GMAC
+- **AES-CTR**: Counter mode
+- **AES-CBC**: Cipher block chaining
+- **SM4**: All modes (with Crypto Multi-buffer)
+
+### Vectorization
+
+The library uses CPU-specific optimizations:
+- **SSE**: Streaming SIMD Extensions
+- **AVX**: Advanced Vector Extensions
+- **AVX2**: 256-bit vectors
+- **AVX-512**: 512-bit vectors
+- **VAES**: Vector AES instructions
+
+## System Requirements
+
+### CPU Instructions
+
+Required instruction set extensions:
+- **AVX512F** - AVX-512 Foundation
+- **VAES** - Vector AES
+- **VPCLMULQDQ** - Vector carry-less multiplication
+- **AVX2** - Advanced Vector Extensions 2
+
+For SM4 operations:
+- **AVX512_IFMA** - Integer Fused Multiply Add (optional, improves performance)
+
+### Runtime Detection
+
+```c
+#include "crypto_mb/cpu_features.h"
+
+// Check if algorithm is supported
+if (mbx_get_algo_info(MBX_ALGO_AES_GCM_256)) {
+    // AES-256-GCM is supported
+}
+```
+
+## Performance Characteristics
+
+### AES-GCM Performance
+
+- **Synchronous processing**: No async batching
+- **Vectorized operations**: Processes multiple blocks per instruction
+- **Pipeline optimization**: Instruction-level parallelism
+- **Cache efficiency**: Optimized memory access patterns
+
+### SM4 Multibuffer Performance
+
+- **Batch size**: 16 requests
+- **Parallel processing**: All 16 requests processed together
+- **Throughput**: Significant improvement over sequential processing
+- **Latency**: Individual request latency higher due to batching
+
+<Tip>
+For maximum SM4 performance, ensure you have 16 or more concurrent operations to fully utilize multibuffer capabilities.
+</Tip>
+
+## OpenSSL Integration
+
+### EVP Cipher Interface
+
+```c
+#include <openssl/evp.h>
+#include <openssl/engine.h>
+
+ENGINE *e = ENGINE_by_id("qatengine");
+ENGINE_init(e);
+
+// Set engine as default for ciphers
+ENGINE_set_default_ciphers(e);
+
+// Use EVP interface normally
+EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), e, key, iv);
+```
+
+### Provider Interface (OpenSSL 3.0)
+
+```c
+#include <openssl/provider.h>
+
+// Load QAT provider
+OSSL_PROVIDER *prov = OSSL_PROVIDER_load(NULL, "qatprovider");
+
+// Use standard EVP interface
+EVP_CIPHER *cipher = EVP_CIPHER_fetch(NULL, "AES-256-GCM", "provider=qatprovider");
+```
+
+See [Provider Interface](/api/provider-interface) for details.
+
+## Code Examples
+
+### AES-GCM Encryption
+
+```c
+#include <openssl/evp.h>
+#include <openssl/engine.h>
+
+int aes_gcm_encrypt(const unsigned char *plaintext, int plaintext_len,
+                    const unsigned char *aad, int aad_len,
+                    const unsigned char *key, const unsigned char *iv,
+                    unsigned char *ciphertext, unsigned char *tag)
+{
+    EVP_CIPHER_CTX *ctx;
+    int len, ciphertext_len;
+    
+    ENGINE *e = ENGINE_by_id("qatengine");
+    ENGINE_init(e);
+    
+    ctx = EVP_CIPHER_CTX_new();
+    
+    // Initialize encryption
+    EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), e, NULL, NULL);
+    
+    // Set IV length
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, 12, NULL);
+    
+    // Initialize key and IV
+    EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv);
+    
+    // Provide AAD
+    if (aad && aad_len > 0)
+        EVP_EncryptUpdate(ctx, NULL, &len, aad, aad_len);
+    
+    // Encrypt plaintext
+    EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len);
+    ciphertext_len = len;
+    
+    // Finalize
+    EVP_EncryptFinal_ex(ctx, ciphertext + len, &len);
+    ciphertext_len += len;
+    
+    // Get tag
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag);
+    
+    EVP_CIPHER_CTX_free(ctx);
+    ENGINE_finish(e);
+    
+    return ciphertext_len;
+}
+```
+
+### SM4-CBC Encryption (Tongsuo)
+
+```c
+#include <openssl/evp.h>
+
+int sm4_cbc_encrypt(const unsigned char *plaintext, int plaintext_len,
+                    const unsigned char *key, const unsigned char *iv,
+                    unsigned char *ciphertext)
+{
+    EVP_CIPHER_CTX *ctx;
+    int len, ciphertext_len;
+    
+    ctx = EVP_CIPHER_CTX_new();
+    
+    // Initialize with SM4-CBC
+    EVP_EncryptInit_ex(ctx, EVP_sm4_cbc(), NULL, key, iv);
+    
+    // Encrypt
+    EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len);
+    ciphertext_len = len;
+    
+    // Finalize (includes padding)
+    EVP_EncryptFinal_ex(ctx, ciphertext + len, &len);
+    ciphertext_len += len;
+    
+    EVP_CIPHER_CTX_free(ctx);
+    
+    return ciphertext_len;
+}
+```
+
+## FIPS Support
+
+In FIPS mode, QAT SW symmetric cryptography supports:
+- **AES-GCM** (128, 192, 256-bit keys)
+- Tag length: 12-16 bytes (FIPS requirement)
+- IV length: 12 bytes (96 bits) recommended
+
+<Warning>
+SM4 algorithms are not FIPS-approved and are disabled in FIPS mode.
+</Warning>
+
+## Algorithm Selection
+
+Control symmetric cipher acceleration:
+
+```c
+// Set algorithm bitmap
+unsigned long bitmap = 0x0010;  // Enable only AES-GCM
+ENGINE_ctrl_cmd(engine, "SW_ALGO_BITMAP", 0, &bitmap, NULL, 0);
+```
+
+See [Engine Control Commands](/api/engine-ctrl) for bitmap values.
+
+## See Also
+
+- [QAT SW Asymmetric Cryptography](/api/qat-sw/asymmetric)
+- [QAT SW Hashing](/api/qat-sw/hashing)
+- [Engine Control Commands](/api/engine-ctrl)
+- [Provider Interface](/api/provider-interface)

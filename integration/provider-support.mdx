@@ -1,0 +1,313 @@
+---
+title: OpenSSL 3.0 Provider Support
+description: Use the Intel QAT Engine with OpenSSL 3.0 provider interface
+---
+
+The Intel QAT OpenSSL Engine supports the provider interface introduced in OpenSSL 3.0, offering a modern alternative to the traditional engine interface.
+
+## Overview
+
+OpenSSL 3.0 introduced the provider architecture as the successor to the engine interface. The QAT provider (`qatprovider`) implements this new interface, enabling QAT hardware and software acceleration in OpenSSL 3.0 and later versions.
+
+### Key Differences: Provider vs Engine
+
+| Feature | Engine Interface | Provider Interface |
+|---------|------------------|--------------------|
+| **OpenSSL Version** | 1.1.1 and earlier | 3.0 and later |
+| **Architecture** | Legacy mechanism | Modern, flexible design |
+| **Default Mode** | Yes (without flag) | Requires `--enable-qat_provider` |
+| **Library Name** | `qatengine.so` | `qatprovider.so` |
+| **Configuration** | OPENSSL_ENGINES env var | OpenSSL config file or command-line |
+| **Future Support** | Maintenance mode | Active development |
+
+## Building with Provider Support
+
+### Enabling the Provider Interface
+
+To build the QAT Engine with provider support, use the `--enable-qat_provider` configure flag:
+
+```bash
+# Configure with provider support
+./configure --enable-qat_provider
+
+# Build and install
+make
+make install
+```
+
+<Note>
+If the `--enable-qat_provider` flag is not specified, the build will default to the engine interface for backward compatibility.
+</Note>
+
+### Build Options
+
+You can combine the provider flag with other configuration options:
+
+```bash
+# Provider with QAT Hardware support
+./configure --enable-qat_provider --enable-qat_hw
+
+# Provider with QAT Software support
+./configure --enable-qat_provider --enable-qat_sw
+
+# Provider with both HW and SW (co-existence)
+./configure --enable-qat_provider --enable-qat_hw --enable-qat_sw
+```
+
+## Using the QAT Provider
+
+### Command-Line Usage
+
+Once built and installed, you can use the QAT provider with OpenSSL commands:
+
+#### QAT Hardware
+
+```bash
+# Test RSA performance with QAT HW
+openssl speed -provider qatprovider -elapsed -async_jobs 72 rsa2048
+
+# Test ECDSA performance
+openssl speed -provider qatprovider -elapsed -async_jobs 72 ecdsap256
+```
+
+#### QAT Software
+
+```bash
+# Test RSA performance with QAT SW
+openssl speed -provider qatprovider -elapsed -async_jobs 8 rsa2048
+
+# Test AES-GCM performance
+openssl speed -provider qatprovider -elapsed -async_jobs 8 aes-128-gcm
+```
+
+### Configuration File
+
+You can configure OpenSSL to use the QAT provider by default through the OpenSSL configuration file:
+
+```ini
+# openssl.cnf
+openssl_conf = openssl_init
+
+[openssl_init]
+providers = provider_sect
+
+[provider_sect]
+qatprovider = qatprovider_sect
+default = default_sect
+
+[qatprovider_sect]
+activate = 1
+# Optional: specify provider module path
+module = /usr/local/lib/ossl-modules/qatprovider.so
+
+[default_sect]
+activate = 1
+```
+
+Then use OpenSSL with the configuration:
+
+```bash
+export OPENSSL_CONF=/path/to/openssl.cnf
+openssl speed -elapsed -async_jobs 72 rsa2048
+```
+
+### Programmatic Usage
+
+In your C/C++ applications:
+
+```c
+#include <openssl/provider.h>
+#include <openssl/evp.h>
+
+int main() {
+    OSSL_PROVIDER *qatprov;
+    OSSL_PROVIDER *defprov;
+    
+    // Load the QAT provider
+    qatprov = OSSL_PROVIDER_load(NULL, "qatprovider");
+    if (qatprov == NULL) {
+        fprintf(stderr, "Failed to load qatprovider\n");
+        return 1;
+    }
+    
+    // Load the default provider for algorithms not in QAT
+    defprov = OSSL_PROVIDER_load(NULL, "default");
+    
+    // Your cryptographic operations here
+    // ...
+    
+    // Cleanup
+    OSSL_PROVIDER_unload(qatprov);
+    OSSL_PROVIDER_unload(defprov);
+    
+    return 0;
+}
+```
+
+## Provider Features
+
+### Experimental Status
+
+The QAT provider support is currently an experimental feature with:
+- Limited functional testing
+- Tested with real-time applications like NGINX and HAProxy
+- Active development and improvements ongoing
+
+<Warning>
+While the QAT provider has been tested with production applications, it is marked as experimental. Thoroughly test in your specific environment before production deployment.
+</Warning>
+
+### Supported Algorithms
+
+The QAT provider supports the same algorithms as the engine interface:
+
+**Asymmetric Algorithms:**
+- RSA (2048, 3072, 4096 bits)
+- ECDSA (P-256, P-384, P-521)
+- ECDH (P-256, P-384, P-521)
+- X25519, X448
+- DH, DSA
+
+**Symmetric Algorithms:**
+- AES-GCM (128, 192, 256 bits)
+- AES-CBC-HMAC-SHA (128, 256 bits)
+- AES-CCM
+- ChaCha20-Poly1305
+
+**Key Derivation:**
+- TLS 1.2 PRF
+- TLS 1.3 HKDF
+- HKDF
+
+**Hashing:**
+- SHA-2 family (SHA-256, SHA-384, SHA-512)
+- SHA-3 family
+- SM3
+
+## FIPS Support
+
+### FIPS 140-3 Certification
+
+The QAT Engine includes changes to comply with FIPS 140-3 Level-1 certification requirements when using the QAT provider with OpenSSL 3.0.
+
+#### Enabling FIPS Mode
+
+```bash
+# Build with FIPS support (requires provider interface)
+./configure --enable-qat_provider --enable-qat_fips
+make
+make install
+```
+
+<Note>
+FIPS support requires the provider interface. You must use `--enable-qat_provider` along with `--enable-qat_fips`.
+</Note>
+
+#### FIPS-Approved Algorithms
+
+**QAT Hardware (FIPS mode):**
+- RSA, ECDSA, ECDH, ECDHX25519, ECDHX448
+- DSA, DH
+- TLS 1.2 KDF (PRF), TLS 1.3 KDF (HKDF)
+- SHA-3, AES-GCM
+
+**QAT Software (FIPS mode):**
+- RSA, ECDSA, ECDH, ECDHX25519
+- SHA-2, AES-GCM
+
+#### FIPS Status
+
+<Warning>
+Version v1.3.1 satisfies FIPS 140-3 Level-1 certification requirements but is not yet FIPS certified. FIPS 140-3 certification is currently in process.
+</Warning>
+
+When FIPS mode is enabled, the provider will:
+- Run self-tests on initialization
+- Perform integrity checks
+- Satisfy FIPS 140-3 CMVP and CAVP requirements
+- Restrict operations to FIPS-approved algorithms
+
+## Application Integration
+
+### NGINX with Provider
+
+```nginx
+# Ensure OpenSSL 3.0 is used
+ssl_conf_command Options KTLS;
+ssl_protocols TLSv1.2 TLSv1.3;
+```
+
+### HAProxy with Provider
+
+```haproxy
+global
+    # HAProxy will use the provider if OpenSSL 3.0+ is detected
+    ssl-engine qatprovider algo ALL
+    ssl-mode-async
+```
+
+## Migration from Engine to Provider
+
+### Key Changes
+
+1. **Library name**: `qatengine.so` → `qatprovider.so`
+2. **Location**: Typically installed in `/usr/local/lib/ossl-modules/`
+3. **Configuration**: Use OpenSSL config file instead of `OPENSSL_ENGINES` environment variable
+4. **API**: Use provider API (`OSSL_PROVIDER_*`) instead of engine API (`ENGINE_*`)
+
+### Compatibility Considerations
+
+<Warning>
+QAT Engine built for OpenSSL 3.0 is only compatible with dependent libraries also linked against OpenSSL 3.0 due to [OpenSSL#17112](https://github.com/openssl/openssl/pull/17112). The same applies for OpenSSL 1.1.1.
+</Warning>
+
+Ensure all components in your stack use the same OpenSSL version:
+- QAT Engine/Provider
+- Application (NGINX, HAProxy, etc.)
+- Dependent libraries (crypto_mb, ipsec_mb)
+
+## Troubleshooting
+
+### Provider Not Loading
+
+```bash
+# Verify provider is installed
+ls -l /usr/local/lib/ossl-modules/qatprovider.so
+
+# Check provider can be loaded
+openssl list -providers -provider qatprovider
+```
+
+### Debug Mode
+
+```bash
+# Build with debug support
+./configure --enable-qat_provider --enable-qat_debug
+make
+make install
+
+# Run with verbose output
+OPENSSL_CONF=/path/to/openssl.cnf openssl speed -provider qatprovider rsa2048
+```
+
+### Verify Provider is Active
+
+```bash
+# List active providers
+openssl list -providers -verbose
+
+# Should show qatprovider if loaded correctly
+```
+
+## Performance Considerations
+
+The provider interface in OpenSSL 3.0 offers similar performance to the engine interface, with some considerations:
+
+- Provider architecture adds minimal overhead
+- Async job tuning is still important (`-async_jobs` parameter)
+- Co-existence mode (HW + SW) works the same way
+- Follow the same performance tuning guidelines as engine mode
+
+<Tip>
+For optimal performance, test both engine and provider interfaces in your specific environment to determine which works best for your use case.
+</Tip>

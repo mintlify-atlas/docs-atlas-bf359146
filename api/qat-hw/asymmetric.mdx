@@ -1,0 +1,212 @@
+---
+title: Asymmetric Cryptography
+description: QAT Hardware acceleration for asymmetric cryptographic operations including RSA, DH, DSA, ECDH, ECDSA, ECX, and SM2
+---
+
+The Intel QAT Engine provides hardware acceleration for a comprehensive set of asymmetric cryptographic algorithms. These operations are offloaded to QAT hardware devices for improved performance.
+
+## RSA
+
+RSA operations support both encryption/decryption and signing/verification with hardware acceleration.
+
+### Supported Key Sizes
+
+| Key Size (bits) | Default Enabled | Platform Support |
+|----------------|-----------------|------------------|
+| 512            | No (insecure)   | All platforms (requires `--enable-qat_insecure_algorithms`) |
+| 1024           | No (insecure)   | All platforms (requires `--enable-qat_insecure_algorithms`) |
+| 2048           | Yes             | All platforms |
+| 3072           | Yes             | All platforms |
+| 4096           | Yes             | All platforms |
+| 8192           | Yes             | QAT 2.0+, qatlib (in-tree) |
+
+### Operations
+
+- **RSA Public Key Encryption** - Encrypt data using public key (`qat_rsa_pub_enc`)
+- **RSA Private Key Decryption** - Decrypt data using private key (`qat_rsa_priv_dec`)
+- **RSA Sign** - Create digital signatures (`qat_rsa_priv_enc`)
+- **RSA Verify** - Verify digital signatures (`qat_rsa_pub_dec`)
+
+### Notes
+
+- RSA padding schemes are handled by OpenSSL rather than accelerated
+- Supports the same padding schemes as OpenSSL natively
+- Key sizes below 2048 bits are disabled by default for security reasons
+
+## Diffie-Hellman (DH)
+
+Diffie-Hellman key exchange for establishing shared secrets.
+
+### Supported Key Sizes
+
+| Key Size (bits) | Default Enabled | Platform Support |
+|----------------|-----------------|------------------|
+| 768            | No (insecure)   | All platforms (requires `--enable-qat_insecure_algorithms`) |
+| 1024           | No (insecure)   | All platforms (requires `--enable-qat_insecure_algorithms`) |
+| 1536           | No (insecure)   | All platforms (requires `--enable-qat_insecure_algorithms`) |
+| 2048           | No (insecure)   | All platforms (requires `--enable-qat_insecure_algorithms`) |
+| 3072           | No (insecure)   | All platforms (requires `--enable-qat_insecure_algorithms`) |
+| 4096           | No (insecure)   | All platforms (requires `--enable-qat_insecure_algorithms`) |
+| 8192           | No (insecure)   | QAT 2.0+, qatlib (requires `--enable-qat_insecure_algorithms`) |
+
+### Operations
+
+- **Phase 1: Key Generation** (`qat_dh_generate_key`) - Generate public/private key pair
+- **Phase 2: Compute Key** (`qat_dh_compute_key`) - Compute shared secret from peer's public key
+
+## Digital Signature Algorithm (DSA)
+
+DSA signing and verification operations.
+
+### Supported Parameters {L, N}
+
+| L (bits) | N (bits) | Default Enabled | Notes |
+|----------|----------|-----------------|-------|
+| 1024     | 160      | No (insecure)   | Requires `--enable-qat_insecure_algorithms` |
+| 2048     | 224      | No (insecure)   | Requires `--enable-qat_insecure_algorithms` |
+| 2048     | 256      | No (insecure)   | Requires `--enable-qat_insecure_algorithms` |
+| 3072     | 256      | No (insecure)   | Requires `--enable-qat_insecure_algorithms` |
+
+Where:
+- **L** = length of prime p (modulus)
+- **N** = length of prime q (group order)
+
+### Operations
+
+- **DSA Sign** (`qat_dsa_do_sign`) - Generate R and S signature values
+- **DSA Verify** (`qat_dsa_do_verify`) - Verify R and S signature values
+
+## Elliptic Curve Diffie-Hellman (ECDH)
+
+Elliptic curve key exchange supporting multiple curve types.
+
+### Supported Curves
+
+#### NIST Prime Curves
+
+| Curve | Bit Length | Default Enabled |
+|-------|------------|----------------|
+| P-192 | 192        | No (insecure)  |
+| P-224 | 224        | No (insecure)  |
+| P-256 | 256        | Yes            |
+| P-384 | 384        | Yes            |
+| P-521 | 521        | Yes            |
+
+#### NIST Binary Curves
+
+| Curve | Bit Length | Default Enabled |
+|-------|------------|----------------|
+| B-163 | 163        | No (insecure)  |
+| B-233 | 233        | No (insecure)  |
+| B-283 | 283        | Yes            |
+| B-409 | 409        | Yes            |
+| B-571 | 571        | Yes            |
+
+#### NIST Koblitz Curves
+
+| Curve | Bit Length | Default Enabled |
+|-------|------------|----------------|
+| K-163 | 163        | No (insecure)  |
+| K-233 | 233        | No (insecure)  |
+| K-283 | 283        | Yes            |
+| K-409 | 409        | Yes            |
+| K-571 | 571        | Yes            |
+
+#### Montgomery Curves (ECX)
+
+| Curve  | Bit Length | Default Enabled |
+|--------|------------|----------------|
+| X25519 | 256        | Yes            |
+| X448   | 448        | Yes            |
+
+### Operations
+
+- **ECDH Key Generation** (`qat_ecdh_generate_key`) - Generate EC key pair
+- **ECDH Compute Key** (`qat_ecdh_compute_key`) - Derive shared secret
+
+### Notes
+
+- Curves with bit length < 256 are disabled by default
+- Requires `--enable-qat_insecure_algorithms` to enable curves below 256 bits
+
+## Elliptic Curve Digital Signature Algorithm (ECDSA)
+
+ECDSA signing and verification on elliptic curves.
+
+### Supported Curves
+
+#### NIST Prime Curves
+
+| Curve | Bit Length | Default Enabled |
+|-------|------------|----------------|
+| P-192 | 192        | No (insecure)  |
+| P-224 | 224        | No (insecure)  |
+| P-256 | 256        | Yes            |
+| P-384 | 384        | Yes            |
+| P-521 | 521        | Yes            |
+
+#### NIST Binary Curves
+
+| Curve | Bit Length | Default Enabled |
+|-------|------------|----------------|
+| B-163 | 163        | No (insecure)  |
+| B-233 | 233        | No (insecure)  |
+| B-283 | 283        | Yes            |
+| B-409 | 409        | Yes            |
+| B-571 | 571        | Yes            |
+
+#### NIST Koblitz Curves
+
+| Curve | Bit Length | Default Enabled |
+|-------|------------|----------------|
+| K-163 | 163        | No (insecure)  |
+| K-233 | 233        | No (insecure)  |
+| K-283 | 283        | Yes            |
+| K-409 | 409        | Yes            |
+| K-571 | 571        | Yes            |
+
+### Operations
+
+- **ECDSA Sign** (`qat_ecdsa_do_sign`) - Generate signature (r, s values)
+- **ECDSA Verify** (`qat_ecdsa_do_verify`) - Verify signature
+
+### Notes
+
+- Curves with bit length < 256 are disabled by default
+- Requires `--enable-qat_insecure_algorithms` to enable curves below 256 bits
+
+## SM2
+
+Chinese National Standard elliptic curve cryptography (experimental).
+
+### Platform Support
+
+| Platform | Default Enabled | Notes |
+|----------|-----------------|-------|
+| QAT 1.8+ | No (experimental) | Requires build flag to enable |
+| QAT 2.0  | No (experimental) | Requires build flag to enable |
+| qatlib   | No (experimental) | Requires build flag to enable |
+
+### Operations
+
+- **SM2 Key Exchange** - ECDH-style key agreement
+- **SM2 Sign/Verify** - Digital signatures
+
+### Notes
+
+- Disabled by default as experimental
+- Available on QAT 1.8 and later platforms
+- Used primarily in Chinese cryptographic standards
+
+## Software Fallback
+
+All asymmetric operations support automatic fallback to OpenSSL software implementation when:
+
+- QAT hardware is unavailable
+- Key/parameter sizes are outside supported range
+- Operation fails or times out
+- Algorithm is unsupported on the platform
+
+## Platform Support Matrix
+
+Refer to the [algorithm support table](/installation/build-options) for detailed platform-specific availability.

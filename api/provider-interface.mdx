@@ -1,0 +1,676 @@
+---
+title: OpenSSL 3.0 Provider Interface
+description: Using Intel QAT Engine as an OpenSSL 3.0 provider with qatprovider
+---
+
+# OpenSSL 3.0 Provider Interface
+
+The Intel QAT OpenSSL Engine supports the OpenSSL 3.0 provider interface through `qatprovider`. This modern API offers improved modularity and better integration with OpenSSL 3.x applications.
+
+## Overview
+
+OpenSSL 3.0 introduced a new provider architecture to replace the legacy engine interface. The QAT Engine supports both interfaces:
+
+- **Engine Interface**: Traditional OpenSSL 1.1.1 and earlier (still supported in 3.0)
+- **Provider Interface**: Modern OpenSSL 3.0+ architecture
+
+<Note>
+The provider interface is the recommended approach for new OpenSSL 3.0 applications. The engine interface is maintained for backward compatibility.
+</Note>
+
+## Building with Provider Support
+
+### Configuration Flag
+
+Enable provider support during build:
+
+```bash
+./configure --enable-qat_provider
+make
+make install
+```
+
+**Default Behavior:**
+- Without `--enable-qat_provider`: Builds engine interface (default)
+- With `--enable-qat_provider`: Builds provider interface
+
+### FIPS Support
+
+For FIPS 140-3 compliance, combine provider and FIPS flags:
+
+```bash
+./configure --enable-qat_provider --enable-qat_fips
+make
+make install
+```
+
+<Warning>
+FIPS support (`--enable-qat_fips`) requires provider interface (`--enable-qat_provider`) and is only available with OpenSSL 3.0+.
+</Warning>
+
+## Using qatprovider
+
+### Loading the Provider
+
+#### Programmatic Loading
+
+```c
+#include <openssl/provider.h>
+
+int main()
+{
+    OSSL_PROVIDER *qatprov = NULL;
+    OSSL_PROVIDER *defprov = NULL;
+    
+    // Load QAT provider
+    qatprov = OSSL_PROVIDER_load(NULL, "qatprovider");
+    if (!qatprov) {
+        fprintf(stderr, "Failed to load qatprovider\n");
+        return 1;
+    }
+    
+    // Load default provider for non-accelerated algorithms
+    defprov = OSSL_PROVIDER_load(NULL, "default");
+    
+    // Providers are now available for use
+    // ...
+    
+    // Cleanup
+    OSSL_PROVIDER_unload(qatprov);
+    OSSL_PROVIDER_unload(defprov);
+    
+    return 0;
+}
+```
+
+#### Configuration File
+
+Configure providers in `openssl.cnf`:
+
+```ini
+openssl_conf = openssl_init
+
+[openssl_init]
+providers = provider_sect
+
+[provider_sect]
+qatprovider = qatprovider_sect
+default = default_sect
+
+[qatprovider_sect]
+activate = 1
+
+[default_sect]
+activate = 1
+```
+
+**Usage:**
+```bash
+export OPENSSL_CONF=/path/to/openssl.cnf
+./your_application
+```
+
+### Algorithm Fetching
+
+Fetch algorithms explicitly from qatprovider:
+
+```c
+#include <openssl/evp.h>
+
+// Fetch RSA from qatprovider
+EVP_SIGNATURE *sig = EVP_SIGNATURE_fetch(NULL, "RSA", "provider=qatprovider");
+
+// Fetch AES-256-GCM cipher
+EVP_CIPHER *cipher = EVP_CIPHER_fetch(NULL, "AES-256-GCM", "provider=qatprovider");
+
+// Fetch SHA-256 digest
+EVP_MD *md = EVP_MD_fetch(NULL, "SHA-256", "provider=qatprovider");
+
+// Use the algorithms...
+
+// Free when done
+EVP_SIGNATURE_free(sig);
+EVP_CIPHER_free(cipher);
+EVP_MD_free(md);
+```
+
+### Implicit Provider Selection
+
+Once loaded, qatprovider is used automatically:
+
+```c
+OSSL_PROVIDER_load(NULL, "qatprovider");
+
+// These will use qatprovider if available
+EVP_CIPHER *cipher = EVP_CIPHER_fetch(NULL, "AES-256-GCM", NULL);
+EVP_MD *md = EVP_MD_fetch(NULL, "SHA-256", NULL);
+```
+
+## OSSL_PROVIDER Functions
+
+### OSSL_PROVIDER_load
+
+Load a provider.
+
+```c
+OSSL_PROVIDER *OSSL_PROVIDER_load(OSSL_LIB_CTX *libctx, const char *name);
+```
+
+**Parameters:**
+- `libctx`: Library context (use `NULL` for default)
+- `name`: Provider name ("qatprovider")
+
+**Returns:**
+- Pointer to provider on success
+- `NULL` on failure
+
+**Example:**
+```c
+OSSL_PROVIDER *prov = OSSL_PROVIDER_load(NULL, "qatprovider");
+if (!prov) {
+    // Handle error
+}
+```
+
+### OSSL_PROVIDER_unload
+
+Unload a provider.
+
+```c
+int OSSL_PROVIDER_unload(OSSL_PROVIDER *prov);
+```
+
+**Parameters:**
+- `prov`: Provider to unload
+
+**Returns:**
+- `1` on success
+- `0` on failure
+
+### OSSL_PROVIDER_available
+
+Check if provider is available.
+
+```c
+int OSSL_PROVIDER_available(OSSL_LIB_CTX *libctx, const char *name);
+```
+
+**Parameters:**
+- `libctx`: Library context (use `NULL` for default)
+- `name`: Provider name
+
+**Returns:**
+- `1` if available
+- `0` if not available
+
+**Example:**
+```c
+if (OSSL_PROVIDER_available(NULL, "qatprovider")) {
+    printf("QAT provider is available\n");
+}
+```
+
+### OSSL_PROVIDER_get_params
+
+Query provider parameters.
+
+```c
+int OSSL_PROVIDER_get_params(OSSL_PROVIDER *prov, OSSL_PARAM params[]);
+```
+
+**Example:**
+```c
+OSSL_PARAM params[2];
+char *name = NULL;
+char *version = NULL;
+
+params[0] = OSSL_PARAM_construct_utf8_ptr("name", &name, 0);
+params[1] = OSSL_PARAM_construct_utf8_ptr("version", &version, 0);
+params[2] = OSSL_PARAM_construct_end();
+
+if (OSSL_PROVIDER_get_params(prov, params)) {
+    printf("Provider: %s, Version: %s\n", name, version);
+}
+```
+
+## Supported Algorithms
+
+### QAT_HW Algorithms (Provider Mode)
+
+| Algorithm | Type | Notes |
+|-----------|------|-------|
+| RSA | Signature/Encryption | 512-8192 bits |
+| ECDSA | Signature | P-256, P-384, P-521, etc. |
+| ECDH | Key Exchange | P-256, P-384, P-521, X25519, X448 |
+| DSA | Signature | Multiple key sizes |
+| DH | Key Exchange | Multiple key sizes |
+| AES-GCM | AEAD Cipher | 128, 256-bit keys |
+| AES-CCM | AEAD Cipher | 128, 192, 256-bit keys |
+| SHA3 | Digest | 224, 256, 384, 512 |
+| SM2 | Signature/Encryption | Chinese standard |
+| SM3 | Digest | Chinese standard |
+| SM4-CBC | Cipher | Chinese standard |
+| PRF | KDF | TLS 1.2 |
+| HKDF | KDF | TLS 1.3 |
+| ChaCha20-Poly1305 | AEAD Cipher | |
+
+### QAT_SW Algorithms (Provider Mode)
+
+| Algorithm | Type | Notes |
+|-----------|------|-------|
+| RSA | Signature/Encryption | 2048, 3072, 4096 bits |
+| ECDSA | Signature | P-256, P-384, SM2 |
+| ECDH | Key Exchange | P-256, P-384, X25519, SM2 |
+| AES-GCM | AEAD Cipher | 128, 192, 256-bit keys |
+| SM4-CBC | Cipher | Tongsuo only |
+| SM4-GCM | AEAD Cipher | Tongsuo only |
+| SM4-CCM | AEAD Cipher | Tongsuo only |
+| SM3 | Digest | Experimental |
+| SHA2 | Digest | 224, 256, 384, 512 |
+
+## Migration from Engine to Provider
+
+### Engine Code (OpenSSL 1.1.1 / 3.0 Compat)
+
+```c
+#include <openssl/engine.h>
+
+int main()
+{
+    ENGINE *e;
+    
+    // Load engine
+    ENGINE_load_builtin_engines();
+    e = ENGINE_by_id("qatengine");
+    
+    // Initialize
+    ENGINE_init(e);
+    
+    // Set as default
+    ENGINE_set_default(e, ENGINE_METHOD_ALL);
+    
+    // Use OpenSSL functions normally
+    // ...
+    
+    // Cleanup
+    ENGINE_finish(e);
+    ENGINE_free(e);
+    
+    return 0;
+}
+```
+
+### Provider Code (OpenSSL 3.0+)
+
+```c
+#include <openssl/provider.h>
+
+int main()
+{
+    OSSL_PROVIDER *prov;
+    
+    // Load provider
+    prov = OSSL_PROVIDER_load(NULL, "qatprovider");
+    if (!prov) {
+        return 1;
+    }
+    
+    // Provider is automatically available
+    // Use OpenSSL functions normally
+    // ...
+    
+    // Cleanup
+    OSSL_PROVIDER_unload(prov);
+    
+    return 0;
+}
+```
+
+### Key Differences
+
+| Aspect | Engine | Provider |
+|--------|--------|----------|
+| API | ENGINE_* functions | OSSL_PROVIDER_* functions |
+| Initialization | ENGINE_init() | OSSL_PROVIDER_load() |
+| Default setting | ENGINE_set_default() | Automatic |
+| Configuration | ENGINE_ctrl_cmd() | OSSL_PROVIDER params |
+| OpenSSL version | 1.1.1+ | 3.0+ |
+
+## Command-Line Usage
+
+### OpenSSL Speed Tests
+
+#### QAT_HW Provider
+
+```bash
+# RSA with async jobs (QAT_HW)
+openssl speed -provider qatprovider -elapsed -async_jobs 72 rsa2048
+
+# ECDSA
+openssl speed -provider qatprovider -elapsed -async_jobs 72 ecdsap256
+
+# AES-GCM
+openssl speed -provider qatprovider -elapsed aes-256-gcm
+```
+
+#### QAT_SW Provider
+
+```bash
+# RSA with fewer async jobs (QAT_SW)
+openssl speed -provider qatprovider -elapsed -async_jobs 8 rsa2048
+
+# ECDH X25519
+openssl speed -provider qatprovider -elapsed -async_jobs 8 ecdhx25519
+
+# AES-GCM (synchronous)
+openssl speed -provider qatprovider -elapsed aes-256-gcm
+```
+
+### List Available Algorithms
+
+```bash
+# List all algorithms from qatprovider
+openssl list -provider qatprovider -all-algorithms
+
+# List ciphers
+openssl list -provider qatprovider -cipher-algorithms
+
+# List digests
+openssl list -provider qatprovider -digest-algorithms
+
+# List signature algorithms
+openssl list -provider qatprovider -signature-algorithms
+```
+
+### Provider Information
+
+```bash
+# Show provider capabilities
+openssl list -provider qatprovider -providers -verbose
+```
+
+## FIPS 140-3 Support
+
+### FIPS Mode Configuration
+
+FIPS mode requires both flags:
+
+```bash
+./configure --enable-qat_provider --enable-qat_fips
+```
+
+**FIPS Features:**
+- Self-tests on initialization
+- Integrity tests
+- CMVP (Cryptographic Module Validation Program) requirements
+- CAVP (Cryptographic Algorithm Validation Program) requirements
+
+### FIPS-Approved Algorithms
+
+**QAT_HW FIPS Mode:**
+- RSA (2048+ bits)
+- ECDSA (P-256, P-384, P-521)
+- ECDH (P-256, P-384, P-521, X25519, X448)
+- DSA
+- DH
+- TLS 1.2 KDF (PRF)
+- TLS 1.3 KDF (HKDF)
+- SHA3 (224, 256, 384, 512)
+- AES-GCM (128, 256)
+
+**QAT_SW FIPS Mode:**
+- RSA (2048, 3072, 4096 bits)
+- ECDSA (P-256, P-384)
+- ECDH (P-256, P-384, X25519)
+- SHA2 (224, 256, 384, 512)
+- AES-GCM (128, 192, 256)
+
+<Warning>
+FIPS certification for QAT Engine v1.3.1 is in process. The current version satisfies FIPS 140-3 Level-1 requirements but is not yet officially certified.
+</Warning>
+
+### FIPS Configuration File
+
+```ini
+openssl_conf = openssl_init
+
+[openssl_init]
+providers = provider_sect
+alg_section = algorithm_sect
+
+[provider_sect]
+fips = fips_sect
+qatprovider = qatprovider_sect
+
+[fips_sect]
+activate = 1
+
+[qatprovider_sect]
+activate = 1
+fips = 1
+
+[algorithm_sect]
+default_properties = fips=yes
+```
+
+## Code Examples
+
+### RSA Signing with Provider
+
+```c
+#include <openssl/evp.h>
+#include <openssl/provider.h>
+#include <openssl/rsa.h>
+
+int rsa_sign_with_provider(const unsigned char *msg, size_t msg_len,
+                           unsigned char *sig, size_t *sig_len,
+                           EVP_PKEY *pkey)
+{
+    EVP_MD_CTX *ctx = NULL;
+    OSSL_PROVIDER *prov = NULL;
+    int ret = 0;
+    
+    // Load provider
+    prov = OSSL_PROVIDER_load(NULL, "qatprovider");
+    if (!prov) goto err;
+    
+    // Create signing context
+    ctx = EVP_MD_CTX_new();
+    if (!ctx) goto err;
+    
+    // Initialize signing
+    if (EVP_DigestSignInit(ctx, NULL, EVP_sha256(), NULL, pkey) <= 0)
+        goto err;
+    
+    // Sign message
+    if (EVP_DigestSign(ctx, sig, sig_len, msg, msg_len) <= 0)
+        goto err;
+    
+    ret = 1;
+    
+err:
+    EVP_MD_CTX_free(ctx);
+    OSSL_PROVIDER_unload(prov);
+    return ret;
+}
+```
+
+### AES-GCM Encryption with Provider
+
+```c
+#include <openssl/evp.h>
+#include <openssl/provider.h>
+
+int aes_gcm_encrypt_provider(const unsigned char *plaintext, int plaintext_len,
+                             const unsigned char *key, const unsigned char *iv,
+                             unsigned char *ciphertext, unsigned char *tag)
+{
+    EVP_CIPHER_CTX *ctx = NULL;
+    EVP_CIPHER *cipher = NULL;
+    OSSL_PROVIDER *prov = NULL;
+    int len, ciphertext_len;
+    int ret = 0;
+    
+    // Load provider
+    prov = OSSL_PROVIDER_load(NULL, "qatprovider");
+    if (!prov) goto err;
+    
+    // Fetch AES-256-GCM from provider
+    cipher = EVP_CIPHER_fetch(NULL, "AES-256-GCM", "provider=qatprovider");
+    if (!cipher) goto err;
+    
+    ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) goto err;
+    
+    // Initialize encryption
+    if (EVP_EncryptInit_ex(ctx, cipher, NULL, NULL, NULL) != 1)
+        goto err;
+    
+    // Set IV length
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, 12, NULL) != 1)
+        goto err;
+    
+    // Initialize key and IV
+    if (EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv) != 1)
+        goto err;
+    
+    // Encrypt plaintext
+    if (EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len) != 1)
+        goto err;
+    ciphertext_len = len;
+    
+    // Finalize
+    if (EVP_EncryptFinal_ex(ctx, ciphertext + len, &len) != 1)
+        goto err;
+    ciphertext_len += len;
+    
+    // Get tag
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag) != 1)
+        goto err;
+    
+    ret = ciphertext_len;
+    
+err:
+    EVP_CIPHER_CTX_free(ctx);
+    EVP_CIPHER_free(cipher);
+    OSSL_PROVIDER_unload(prov);
+    return ret;
+}
+```
+
+### Checking Provider Availability
+
+```c
+#include <openssl/provider.h>
+#include <stdio.h>
+
+int main()
+{
+    if (OSSL_PROVIDER_available(NULL, "qatprovider")) {
+        printf("QAT provider is available\n");
+        
+        OSSL_PROVIDER *prov = OSSL_PROVIDER_load(NULL, "qatprovider");
+        if (prov) {
+            printf("Successfully loaded qatprovider\n");
+            OSSL_PROVIDER_unload(prov);
+        }
+    } else {
+        printf("QAT provider is not available\n");
+    }
+    
+    return 0;
+}
+```
+
+## Testing and Validation
+
+### Basic Functionality Test
+
+```bash
+# Test RSA with provider
+openssl speed -provider qatprovider -elapsed -async_jobs 8 rsa2048
+
+# Test ECDSA
+openssl speed -provider qatprovider -elapsed -async_jobs 8 ecdsap256
+
+# Test AES-GCM
+openssl speed -provider qatprovider -elapsed aes-256-gcm
+```
+
+### Real-World Application Testing
+
+**Nginx with qatprovider:**
+
+Configure nginx to use qatprovider by setting `OPENSSL_CONF` before starting:
+
+```bash
+export OPENSSL_CONF=/etc/ssl/qat-openssl.cnf
+nginx
+```
+
+**HAProxy with qatprovider:**
+
+Similarly for HAProxy:
+
+```bash
+export OPENSSL_CONF=/etc/ssl/qat-openssl.cnf
+haproxy -f /etc/haproxy/haproxy.cfg
+```
+
+<Note>
+Provider support has undergone limited functional testing with real-time applications like Nginx and HAProxy. Thorough testing is recommended for production deployments.
+</Note>
+
+## Troubleshooting
+
+### Provider Not Loading
+
+**Check provider path:**
+```bash
+# Find provider location
+find /usr -name "*qatprovider*"
+
+# Set OPENSSL_MODULES if needed
+export OPENSSL_MODULES=/usr/local/lib/ossl-modules
+```
+
+**Check OpenSSL configuration:**
+```bash
+openssl version -d
+# Shows: OPENSSLDIR: "/usr/local/ssl"
+# Provider config should be in: /usr/local/ssl/openssl.cnf
+```
+
+### Algorithm Not Available
+
+**List available algorithms:**
+```bash
+openssl list -provider qatprovider -all-algorithms
+```
+
+**Check algorithm bitmap:**
+
+Some algorithms may be disabled via configuration flags or runtime bitmaps.
+
+### Performance Issues
+
+**Use correct async job count:**
+- QAT_HW: `-async_jobs 72` (or more)
+- QAT_SW: `-async_jobs 8` (typically 8-16)
+
+**Check system resources:**
+```bash
+# Check QAT devices
+lspci | grep -i qat
+
+# Check QAT driver status
+service qat_service status
+```
+
+## See Also
+
+- [QAT SW Asymmetric Cryptography](/api/qat-sw/asymmetric)
+- [QAT SW Symmetric Cryptography](/api/qat-sw/symmetric)
+- [QAT SW Hashing](/api/qat-sw/hashing)
+- [Engine Control Commands](/api/engine-ctrl)
+- [OpenSSL 3.0 Provider Documentation](https://www.openssl.org/docs/man3.0/man7/provider.html)

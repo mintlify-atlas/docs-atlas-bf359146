@@ -1,0 +1,419 @@
+---
+title: QAT SW Hashing
+description: Multi-buffer accelerated hash operations for SM3 and SHA2 algorithms
+---
+
+# QAT SW Hashing
+
+The Intel QAT OpenSSL Engine provides software-accelerated hashing operations using the Intel Crypto Multi-buffer library. Hash operations use multibuffer batching to process multiple hash computations in parallel using AVX-512 instructions.
+
+## Overview
+
+QAT SW hashing batches multiple hash requests and processes them together using vectorized instructions. This approach significantly improves throughput when processing many concurrent hash operations.
+
+<Note>
+Hash operations use multibuffer batching with up to 16 parallel requests for SM3, delivering optimal performance in high-concurrency scenarios.
+</Note>
+
+## Supported Algorithms
+
+### SM3 Hash
+
+Chinese national standard cryptographic hash function.
+
+**Algorithm Specifications:**
+- **Output size**: 256 bits (32 bytes)
+- **Block size**: 512 bits (64 bytes)
+- **Multibuffer**: 16 parallel requests
+- **Status**: Experimental
+
+**Features:**
+- Multi-buffer acceleration using crypto_mb/sm3.h
+- Batch processing for high throughput
+- Compatible with Chinese cryptographic standards
+- OpenSSL EVP_MD interface
+
+**Implementation Details:**
+
+The SM3 implementation in `qat_sw_sm3.c` uses multibuffer operations:
+
+```c
+#include "crypto_mb/sm3.h"
+
+#define MULTIBUFF_SM3_BATCH 16  // Process 16 hashes in parallel
+
+// SM3 context for multibuffer operations
+typedef struct {
+    SM3_CTX_mb16 mb_ctx;  // 16-way multibuffer context
+    // ... other fields
+} sm3_ctx;
+```
+
+**NID (Numeric Identifier):**
+```c
+int sm3_nid[] = {
+    NID_sm3,  // OpenSSL NID for SM3
+};
+```
+
+### SM3 Multibuffer Operations
+
+#### Initialization
+
+```c
+void process_sm3_init_reqs(mb_thread_data *tlv)
+{
+    sm3_init_op_data *sm3_init_req_array[MULTIBUFF_SM3_BATCH] = {0};
+    SM3_CTX_mb16 sm3_init_ctx = {0};
+    unsigned int sm3_sts = 0;
+    
+    // Dequeue up to 16 requests
+    while ((sm3_init_req_array[req_num] =
+            mb_queue_sm3_init_dequeue(tlv->sm3_init_queue)) != NULL) {
+        req_num++;
+        if (req_num == MULTIBUFF_SM3_MIN_BATCH)
+            break;
+    }
+    
+    // Initialize all contexts in parallel
+    sm3_sts = mbx_sm3_init_mb16(&sm3_init_ctx);
+    
+    // Check status for each request
+    for (req_num = 0; req_num < local_request_no; req_num++) {
+        if (MBX_GET_STS(sm3_sts, req_num) == MBX_STATUS_OK) {
+            // Success
+        }
+    }
+}
+```
+
+#### Update and Finalization
+
+The SM3 implementation provides:
+- **Init**: Initialize hash context
+- **Update**: Process message data
+- **Final**: Complete hash and produce digest
+
+**Batch Processing:**
+- Minimum batch: Configurable (typically 8)
+- Maximum batch: 16 requests
+- Queue management: Per-thread queues
+
+### SHA2 Operations
+
+Standard SHA-2 family hash functions.
+
+**Supported Algorithms:**
+- SHA-224 (224-bit output)
+- SHA-256 (256-bit output)
+- SHA-384 (384-bit output)
+- SHA-512 (512-bit output)
+
+**Features:**
+- Hardware acceleration where available
+- Software fallback
+- FIPS 140-3 approved (in FIPS mode)
+
+<Note>
+SHA2 operations in QAT SW mode primarily serve as fallback. For maximum SHA2 performance, consider using QAT HW acceleration if available.
+</Note>
+
+**FIPS Support:**
+
+In FIPS mode, SHA2 operations are approved:
+- SHA-256 (primary)
+- SHA-384 
+- SHA-512
+- SHA-224 (allowed)
+
+## Performance Characteristics
+
+### Multibuffer Batching
+
+**SM3 Performance:**
+- **Batch size**: Up to 16 requests
+- **Parallelism**: All requests processed simultaneously
+- **Throughput**: Scales with number of concurrent operations
+- **Latency**: Individual operation latency increases with batching
+
+**Optimal Usage:**
+```bash
+# High concurrency for best throughput
+openssl speed -multi 16 sm3
+```
+
+### Thread-Local Queues
+
+Each thread maintains its own request queues:
+- **sm3_init_queue**: Initialization requests
+- **sm3_update_queue**: Update requests  
+- **sm3_final_queue**: Finalization requests
+
+**Queue Management:**
+```c
+typedef struct mb_thread_data {
+    // Per-thread queues
+    sm3_queue_t *sm3_init_queue;
+    sm3_queue_t *sm3_update_queue;
+    sm3_queue_t *sm3_final_queue;
+    // ... other fields
+} mb_thread_data;
+```
+
+### Batching Strategy
+
+1. **Enqueue**: Requests added to thread-local queue
+2. **Batch**: Wait for minimum batch size or timeout
+3. **Process**: Execute all requests in parallel
+4. **Complete**: Return results to callers
+
+<Tip>
+For best performance with SM3, ensure you have at least 8-16 concurrent hash operations. Single-threaded sequential hashing may be faster with standard OpenSSL.
+</Tip>
+
+## System Requirements
+
+### CPU Instructions
+
+Required for SM3 multibuffer:
+- **AVX512F** - AVX-512 Foundation
+- **AVX512_IFMA** - Integer Fused Multiply Add (optional, improves performance)
+- **AVX2** - Advanced Vector Extensions 2
+
+### Runtime Detection
+
+```c
+#include "crypto_mb/cpu_features.h"
+
+// Check CPU capabilities
+if (mbx_get_algo_info(MBX_ALGO_HASH_SM3)) {
+    // SM3 multibuffer is supported
+}
+```
+
+## OpenSSL Integration
+
+### EVP_MD Interface
+
+```c
+#include <openssl/evp.h>
+#include <openssl/engine.h>
+
+ENGINE *e = ENGINE_by_id("qatengine");
+ENGINE_init(e);
+
+// Set engine as default for digests
+ENGINE_set_default_digests(e);
+
+// Use EVP interface
+EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+EVP_DigestInit_ex(ctx, EVP_sm3(), e);
+EVP_DigestUpdate(ctx, data, data_len);
+EVP_DigestFinal_ex(ctx, digest, &digest_len);
+
+EVP_MD_CTX_free(ctx);
+ENGINE_finish(e);
+```
+
+### Provider Interface (OpenSSL 3.0)
+
+```c
+#include <openssl/provider.h>
+
+OSSL_PROVIDER *prov = OSSL_PROVIDER_load(NULL, "qatprovider");
+
+// Fetch SM3 digest
+EVP_MD *md = EVP_MD_fetch(NULL, "SM3", "provider=qatprovider");
+
+EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+EVP_DigestInit_ex(ctx, md, NULL);
+// ... use normally
+
+EVP_MD_free(md);
+```
+
+## Code Examples
+
+### SM3 Hash Computation
+
+```c
+#include <openssl/evp.h>
+#include <openssl/engine.h>
+
+int compute_sm3(const unsigned char *message, size_t message_len,
+                unsigned char *digest)
+{
+    EVP_MD_CTX *ctx;
+    unsigned int digest_len;
+    
+    ENGINE *e = ENGINE_by_id("qatengine");
+    if (!e) return 0;
+    
+    ENGINE_init(e);
+    ENGINE_set_default_digests(e);
+    
+    ctx = EVP_MD_CTX_new();
+    if (!ctx) {
+        ENGINE_finish(e);
+        return 0;
+    }
+    
+    // Initialize SM3
+    if (!EVP_DigestInit_ex(ctx, EVP_sm3(), e)) {
+        EVP_MD_CTX_free(ctx);
+        ENGINE_finish(e);
+        return 0;
+    }
+    
+    // Process message
+    if (!EVP_DigestUpdate(ctx, message, message_len)) {
+        EVP_MD_CTX_free(ctx);
+        ENGINE_finish(e);
+        return 0;
+    }
+    
+    // Finalize and get digest
+    if (!EVP_DigestFinal_ex(ctx, digest, &digest_len)) {
+        EVP_MD_CTX_free(ctx);
+        ENGINE_finish(e);
+        return 0;
+    }
+    
+    EVP_MD_CTX_free(ctx);
+    ENGINE_finish(e);
+    
+    return digest_len;  // Should be 32 for SM3
+}
+```
+
+### Multi-threaded SM3 Hashing
+
+```c
+#include <pthread.h>
+#include <openssl/evp.h>
+
+typedef struct {
+    const unsigned char *data;
+    size_t data_len;
+    unsigned char *digest;
+} hash_task;
+
+void *hash_worker(void *arg)
+{
+    hash_task *task = (hash_task *)arg;
+    compute_sm3(task->data, task->data_len, task->digest);
+    return NULL;
+}
+
+int main()
+{
+    const int NUM_THREADS = 16;
+    pthread_t threads[NUM_THREADS];
+    hash_task tasks[NUM_THREADS];
+    
+    // Initialize tasks
+    // ...
+    
+    // Launch threads
+    for (int i = 0; i < NUM_THREADS; i++) {
+        pthread_create(&threads[i], NULL, hash_worker, &tasks[i]);
+    }
+    
+    // Wait for completion
+    for (int i = 0; i < NUM_THREADS; i++) {
+        pthread_join(threads[i], NULL);
+    }
+    
+    return 0;
+}
+```
+
+### SHA-256 Hash (Fallback)
+
+```c
+#include <openssl/evp.h>
+
+int compute_sha256(const unsigned char *message, size_t message_len,
+                   unsigned char *digest)
+{
+    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+    unsigned int digest_len;
+    
+    EVP_DigestInit_ex(ctx, EVP_sha256(), NULL);
+    EVP_DigestUpdate(ctx, message, message_len);
+    EVP_DigestFinal_ex(ctx, digest, &digest_len);
+    
+    EVP_MD_CTX_free(ctx);
+    
+    return digest_len;  // Should be 32 for SHA-256
+}
+```
+
+## Experimental Status
+
+<Warning>
+SM3 multibuffer acceleration is marked as **experimental**. While functional, it may undergo changes in future releases. Use with caution in production environments.
+</Warning>
+
+**Known Considerations:**
+- Performance varies with batch size
+- Requires sufficient concurrency for optimal throughput
+- Thread synchronization overhead
+- Queue management complexity
+
+## FIPS Compliance
+
+**FIPS-Approved Algorithms:**
+- SHA-256 ✓
+- SHA-384 ✓
+- SHA-512 ✓
+- SHA-224 ✓
+
+**Non-FIPS Algorithms:**
+- SM3 (Chinese standard, not FIPS-approved)
+
+<Note>
+In FIPS mode (--enable-qat_fips), only SHA-2 family algorithms are available. SM3 is disabled.
+</Note>
+
+## Algorithm Selection
+
+Control hash algorithm acceleration:
+
+```c
+// Enable/disable specific hash algorithms
+unsigned long bitmap = 0x0020;  // Example bitmap
+ENGINE_ctrl_cmd(engine, "SW_ALGO_BITMAP", 0, &bitmap, NULL, 0);
+```
+
+See [Engine Control Commands](/api/engine-ctrl) for details.
+
+## Performance Tuning
+
+### Batch Size Tuning
+
+```c
+// Adjust minimum batch size for SM3
+#define MULTIBUFF_SM3_MIN_BATCH 8   // Default
+#define MULTIBUFF_SM3_BATCH 16      // Maximum
+```
+
+**Trade-offs:**
+- **Larger batches**: Higher throughput, higher latency
+- **Smaller batches**: Lower latency, lower throughput
+
+### Concurrency Recommendations
+
+| Workload Type | Recommended Threads | Batch Size |
+|---------------|--------------------|-----------|
+| High throughput | 16+ | 16 |
+| Balanced | 8-16 | 8-12 |
+| Low latency | 4-8 | 4-8 |
+| Single request | 1 | Use standard OpenSSL |
+
+## See Also
+
+- [QAT SW Asymmetric Cryptography](/api/qat-sw/asymmetric)
+- [QAT SW Symmetric Cryptography](/api/qat-sw/symmetric)
+- [Engine Control Commands](/api/engine-ctrl)
+- [Provider Interface](/api/provider-interface)

@@ -1,0 +1,175 @@
+---
+title: Installing from Packages
+description: Install QAT Engine using pre-built distribution packages
+---
+
+## Distribution Packages
+
+Several Linux distributions include the `qatengine` package in their official repositories. These packages are built with QAT_HW qatlib in-tree driver support (for 4xxx devices only).
+
+### Supported Distributions
+
+<CodeGroup>
+
+```bash Fedora
+# Fedora 34 and later
+sudo dnf install qatengine
+```
+
+```bash RHEL / CentOS
+# RHEL 8.4+, RHEL 9.0+, CentOS Stream 9
+sudo dnf install qatengine
+```
+
+```bash Ubuntu
+# Ubuntu 24.04
+sudo apt-get update
+sudo apt-get install qatengine
+```
+
+```bash SUSE
+# SUSE SLES15 SP3 and later
+sudo zypper install qatengine
+```
+
+</CodeGroup>
+
+<Note>
+Packages from distribution repositories are built with the qatlib in-tree driver and support 4xxx devices only.
+</Note>
+
+### Post-Installation Configuration
+
+After installing the package, configure QAT settings according to the qatlib documentation:
+
+<Card title="QATlib Configuration" icon="gear" href="https://github.com/intel/qatlib/blob/main/INSTALL">
+  Refer to the qatlib installation guide for configuration settings
+</Card>
+
+For more information about using the in-tree driver and co-existence scenarios:
+
+<Card title="QATlib Documentation" icon="book" href="https://intel.github.io/quickassist/qatlib/index.html">
+  Complete guide to QATlib and in-tree driver usage
+</Card>
+
+## Binary RPM Packages
+
+Pre-built binary RPM packages are available for specific distributions with both QAT_HW (OOT driver for 4xxx devices) and QAT_SW co-existence support.
+
+### Supported Platforms
+
+Binary RPM packages are available for:
+
+- RHEL 9.1
+- Ubuntu 22.04
+- SUSE SLES15 SP3
+
+<Info>
+These packages include both QAT Hardware (Out-of-Tree driver) and QAT Software acceleration support.
+</Info>
+
+### Installation Steps
+
+1. Download the appropriate RPM package for your distribution
+2. Install using your package manager:
+
+<CodeGroup>
+
+```bash RHEL/CentOS
+sudo rpm -ivh qatengine-<version>.rpm
+```
+
+```bash Ubuntu (convert to .deb)
+# Convert RPM to DEB using alien
+sudo alien qatengine-<version>.rpm
+sudo dpkg -i qatengine-<version>.deb
+```
+
+```bash SUSE
+sudo zypper install qatengine-<version>.rpm
+```
+
+</CodeGroup>
+
+<Note>
+For detailed information about binary RPM packages, refer to the [QAT Common documentation](/installation/from-packages#binary-rpm-packages).
+</Note>
+
+## Docker Images
+
+Docker images are available for QAT Engine with QATlib and HAProxy integration.
+
+### Available Images
+
+Pre-built Dockerfiles include:
+
+- QAT Engine with QATlib
+- HAProxy with QAT acceleration
+- Complete development environment
+
+### Building Docker Images
+
+<Steps>
+  <Step title="Navigate to dockerfiles directory">
+    ```bash
+    cd QAT_Engine/dockerfiles
+    ```
+  </Step>
+  
+  <Step title="Review the README">
+    Check the available Dockerfile options and build instructions:
+    ```bash
+    cat README.md
+    ```
+  </Step>
+  
+  <Step title="Build the image">
+    ```bash
+    docker build -t qat-engine:latest -f Dockerfile .
+    ```
+  </Step>
+  
+  <Step title="Run the container">
+    ```bash
+    docker run -it --privileged qat-engine:latest
+    ```
+  </Step>
+</Steps>
+
+<Card title="Docker Documentation" icon="docker" href="/installation/from-packages#docker-images">
+  Complete guide to building and using QAT Engine Docker images
+</Card>
+
+<Warning>
+Docker containers require privileged mode to access QAT hardware devices.
+</Warning>
+
+## Verification
+
+After installation, verify the QAT Engine is available:
+
+```bash
+# For OpenSSL 3.x
+openssl engine -t -c qatengine
+```
+
+Expected output:
+```
+(qatengine) Intel QuickAssist Technology Engine
+     [ available ]
+```
+
+<Tip>
+If the engine is not found, check that `OPENSSL_ENGINES` environment variable points to the correct engines directory.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="sliders" href="/configuration">
+    Configure QAT Engine for your use case
+  </Card>
+  <Card title="Performance Tuning" icon="gauge-high" href="/quickstart#run-performance-tests">
+    Optimize QAT Engine performance
+  </Card>
+</CardGroup>

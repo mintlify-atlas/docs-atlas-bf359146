@@ -1,0 +1,130 @@
+---
+title: Requirements
+description: Hardware and software requirements for Intel QAT Engine
+---
+
+## Hardware Requirements
+
+### QAT Hardware Acceleration
+
+QAT_HW acceleration is supported on platforms with the following QAT devices:
+
+<CardGroup cols={2}>
+  <Card title="Intel QuickAssist 4xxx Series" icon="microchip" href="https://www.intel.com/content/www/us/en/products/details/processors/xeon.html">
+    Latest generation QAT devices
+  </Card>
+  <Card title="Intel QuickAssist Adapter 8970" icon="microchip" href="https://www.intel.com/content/www/us/en/products/sku/125200/intel-quickassist-adapter-8970/downloads.html">
+    High-performance adapter
+  </Card>
+  <Card title="Intel QuickAssist Adapter 8960" icon="microchip" href="https://www.intel.com/content/www/us/en/products/sku/125199/intel-quickassist-adapter-8960/downloads.html">
+    High-performance adapter
+  </Card>
+  <Card title="Intel QuickAssist Adapter 8950" icon="microchip" href="https://www.intel.com/content/www/us/en/products/sku/80371/intel-communications-chipset-8950/specifications.html">
+    Communications chipset
+  </Card>
+  <Card title="Intel Atom C3000 Series" icon="microchip" href="https://www.intel.com/content/www/us/en/design/products-and-solutions/processors-and-chipsets/denverton/ns/atom-processor-c3000-series.html">
+    Denverton processor family
+  </Card>
+  <Card title="Intel Atom P5900 Series" icon="microchip" href="https://www.intel.com/content/www/us/en/ark/products/series/202693/intel-atom-processor-p-series.html">
+    P-series processor family
+  </Card>
+</CardGroup>
+
+### QAT Software Acceleration
+
+QAT_SW acceleration is supported on platforms starting with:
+
+- [3rd Generation Intel Xeon Scalable Processors](https://www.intel.com/content/www/us/en/products/docs/processors/xeon/3rd-gen-xeon-scalable-processors-brief.html) and later
+
+<Note>
+QAT_SW provides software-based cryptographic acceleration using optimized libraries on compatible Intel processors.
+</Note>
+
+## Software Requirements
+
+Successful operation requires QAT Hardware drivers (for QAT_HW) or optimized software libraries (for QAT_SW), along with a compatible crypto library.
+
+### QAT Hardware Drivers
+
+<AccordionGroup>
+  <Accordion title="Linux QAT Drivers">
+    | Driver | Version | Platform |
+    |--------|---------|----------|
+    | [QAT Driver for Linux HW 2.0](https://www.intel.com/content/www/us/en/download/765501/intel-quickassist-technology-driver-for-linux-hw-version-2-0.html) | QAT20.L.1.2.30-00090 | QAT 2.0 devices |
+    | [QAT Driver for Linux HW 1.x](https://www.intel.com/content/www/us/en/download/19734/intel-quickassist-technology-driver-for-linux-hw-version-1-x.html) | QAT.L.4.28.0-00004 | QAT 1.x devices |
+    | [Intel QATlib (in-tree)](https://github.com/intel/qatlib) | 24.09.0, 24.02.0 | 4xxx devices only |
+  </Accordion>
+  
+  <Accordion title="FreeBSD QAT Drivers">
+    | Driver | Version | Platform |
+    |--------|---------|----------|
+    | QAT Driver for FreeBSD | QAT.B.3.14.31-00003 | FreeBSD 13.2 |
+    | [QATlib for FreeBSD](https://github.com/intel/qatlib-freebsd) | 23.09.0 | FreeBSD 14 (in-tree) |
+  </Accordion>
+</AccordionGroup>
+
+### QAT Software Libraries
+
+Required for QAT_SW acceleration:
+
+| Library | Version | Purpose |
+|---------|---------|----------|
+| [Intel Crypto Multi-buffer](https://github.com/intel/cryptography-primitives/tree/develop/sources/ippcp/crypto_mb) | IPP Crypto v1.2.0, 2021.10 | Vectorized crypto operations |
+| [Intel Multi-Buffer crypto for IPsec](https://github.com/intel/intel-ipsec-mb) | v2.0 | IPsec crypto acceleration |
+
+<Note>
+For BoringSSL support, use IPP Crypto 2021.10 specifically.
+</Note>
+
+### Crypto Libraries
+
+Supported SSL/TLS libraries:
+
+<Tabs>
+  <Tab title="OpenSSL">
+    **Supported Versions:**
+    - 3.0.16
+    - 3.2.4
+    - 3.3.3
+    - 3.4.1
+    - 3.5.0
+    
+    [OpenSSL GitHub Repository](https://github.com/openssl/openssl)
+  </Tab>
+  
+  <Tab title="Tongsuo (BabaSSL)">
+    **Supported Version:** 8.4.0
+    
+    [Tongsuo GitHub Repository](https://github.com/Tongsuo-Project/Tongsuo)
+  </Tab>
+  
+  <Tab title="BoringSSL">
+    **Supported Commit:** [23ed9d3](https://github.com/google/boringssl/commit/23ed9d3852bbc738bebeaa0fe4a0782f91d7873c)
+    
+    [BoringSSL GitHub Repository](https://github.com/google/boringssl)
+  </Tab>
+</Tabs>
+
+### Build Prerequisites
+
+Required autotools for building from source:
+
+- autoconf
+- automake
+- libtool
+- pkg-config
+
+<Warning>
+Ensure all prerequisites are installed before running `autogen.sh` to configure the build.
+</Warning>
+
+## Version Compatibility
+
+This release has been validated on the versions listed above and is expected to work on:
+- All major Linux distributions
+- FreeBSD 13.2 and 14
+- Latest versions from the linked repositories
+
+<Note>
+For the most up-to-date compatibility information, refer to the [Intel QuickAssist Technology](https://www.intel.com/content/www/us/en/developer/topic-technology/open/quick-assist-technology/overview.html) documentation.
+</Note>

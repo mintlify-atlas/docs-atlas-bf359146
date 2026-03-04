@@ -1,0 +1,373 @@
+---
+title: Common Issues and Solutions
+description: Troubleshoot frequently encountered problems with Intel QAT Engine
+---
+
+This guide covers the most common issues encountered when using the Intel QAT Engine and their solutions.
+
+## Engine/Provider Loading Issues
+
+The most common failure point is the QAT Engine or Provider not loading successfully.
+
+<AccordionGroup>
+  <Accordion title="Engine/Provider fails to load" icon="circle-exclamation">
+    **Symptoms:**
+    - OpenSSL commands fail to recognize the QAT engine/provider
+    - Applications don't show QAT acceleration
+    - Error messages about missing libraries
+
+    **Solutions:**
+
+    1. **Verify library installation:**
+    ```bash
+    # For engine interface
+    ls -l $(openssl version -e | awk '{print $2}' | tr -d '"')/qatengine.so
+    
+    # For provider interface
+    ls -l /usr/local/lib/ossl-modules/qatprovider.so
+    ```
+
+    2. **Check OPENSSL_ENGINES environment variable (engine only):**
+    ```bash
+    echo $OPENSSL_ENGINES
+    # Should point to engine directory, e.g., /usr/local/lib/engines-3
+    
+    # If not set:
+    export OPENSSL_ENGINES=/usr/local/lib/engines-3
+    ```
+
+    3. **Verify shared library dependencies:**
+    ```bash
+    # For engine
+    ldd /usr/local/lib/engines-3/qatengine.so
+    
+    # For provider
+    ldd /usr/local/lib/ossl-modules/qatprovider.so
+    ```
+
+    4. **Set LD_LIBRARY_PATH if libraries are not found:**
+    ```bash
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/ssl/lib64
+    ```
+  </Accordion>
+
+  <Accordion title="Cannot locate libcrypto.so or libssl.so" icon="book">
+    **Symptoms:**
+    - Error messages about missing `libcrypto.so` or `libssl.so`
+    - Engine/provider loads but crashes immediately
+
+    **Solution:**
+
+    Add the OpenSSL installation directory to `LD_LIBRARY_PATH`:
+
+    ```bash
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/ssl/lib64
+    ```
+
+    Make this permanent by adding to your shell profile:
+    ```bash
+    echo 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/ssl/lib64' >> ~/.bashrc
+    source ~/.bashrc
+    ```
+  </Accordion>
+
+  <Accordion title="Misleading 'undefined symbol: EVP_PKEY_get_base_id' error" icon="triangle-exclamation">
+    **Symptoms:**
+    - Error message: `undefined symbol: EVP_PKEY_get_base_id`
+    - Appears during engine load in OpenSSL 1.1.1n or OpenSSL 3.0.2
+
+    **Solution:**
+
+    This is a misleading error message that can be safely ignored. It's not a real failure.
+
+    <Note>
+    This issue was introduced in OpenSSL 1.1.1n and OpenSSL 3.0.2, and fixed in OpenSSL 1.1.1o and OpenSSL 3.0.3. Consider upgrading to these versions or later.
+    </Note>
+  </Accordion>
+</AccordionGroup>
+
+## QAT Hardware Driver Issues
+
+<AccordionGroup>
+  <Accordion title="QAT HW initialization failed" icon="microchip">
+    **Symptoms:**
+    ```
+    ADF_UIO_PROXY err: icp_adf_userProcessToStart: Error reading /dev/qat_dev_processes file
+    QAT HW initialization Failed.
+    ```
+
+    **Solutions:**
+
+    1. **Check driver configuration:**
+    ```bash
+    # Verify driver config file exists and has [SHIM] section
+    cat /etc/*/conf | grep -A 5 "\[SHIM\]"
+    ```
+
+    2. **Update driver configuration:**
+    ```bash
+    cd /path/to/qat_driver
+    ./update_config.sh
+    ```
+
+    3. **Verify QAT devices are up:**
+    ```bash
+    adf_ctl status
+    # All devices should show "state: up"
+    ```
+
+    4. **Restart QAT service if needed:**
+    ```bash
+    adf_ctl restart
+    ```
+  </Accordion>
+
+  <Accordion title="icp_sal_userstart fail" icon="gears">
+    **Symptoms:**
+    ```
+    icp sal userstart fail:qat_hw_init.c
+    ```
+
+    **Cause:**
+    The driver config file doesn't have enough processes configured for your application.
+
+    **Solution:**
+
+    1. **Check current NumProcesses setting:**
+    ```bash
+    grep "NumProcesses" /etc/*/conf
+    ```
+
+    2. **Increase NumProcesses in driver config:**
+    ```bash
+    # Edit the config file (e.g., /etc/4xxx_dev0.conf)
+    NumProcesses = 32  # Increase this value based on your needs
+    ```
+
+    3. **Restart QAT driver:**
+    ```bash
+    adf_ctl restart
+    ```
+
+    <Note>
+    If QAT_SW is enabled in co-existence mode, processes that can't get a QAT_HW instance will fall back to QAT_SW automatically.
+    </Note>
+  </Accordion>
+
+  <Accordion title="QAT driver not installed or not running" icon="power-off">
+    **Symptoms:**
+    - Commands fail with QAT hardware errors
+    - `adf_ctl` command not found
+
+    **Solution:**
+
+    1. **Check if driver is installed:**
+    ```bash
+    which adf_ctl
+    lsmod | grep qat
+    ```
+
+    2. **Check device status:**
+    ```bash
+    adf_ctl status
+    # Should show devices with "state: up"
+    ```
+
+    3. **Start the driver if not running:**
+    ```bash
+    # For qatlib (in-tree driver)
+    systemctl start qat
+    
+    # For OOT driver
+    adf_ctl up
+    ```
+
+    4. **For qatlib in-tree driver, configure policy settings:**
+    Refer to the [qatlib install guide](https://github.com/intel/qatlib/blob/main/INSTALL) for proper NumProcesses and service configuration.
+  </Accordion>
+</AccordionGroup>
+
+## QAT Software Issues
+
+<AccordionGroup>
+  <Accordion title="QAT_SW libraries not found" icon="folder-open">
+    **Symptoms:**
+    - Build fails with missing crypto_mb or ipsec_mb
+    - Runtime errors about missing SW acceleration libraries
+
+    **Solution:**
+
+    1. **Install dependent libraries in default path**, or
+    2. **Specify custom installation paths:**
+    ```bash
+    ./configure \
+      --with-qat_sw_crypto_mb_install_dir=/path/to/crypto_mb \
+      --with-qat_sw_ipsec_mb_install_dir=/path/to/ipsec_mb
+    ```
+
+    3. **Verify libraries are accessible:**
+    ```bash
+    ldconfig -p | grep crypto_mb
+    ldconfig -p | grep ipsec_mb
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Build and Package Issues
+
+<AccordionGroup>
+  <Accordion title="Missing OpenSSL development packages" icon="box">
+    **Symptoms:**
+    - Build fails with missing OpenSSL headers
+    - Cannot find `openssl/evp.h` or similar headers
+
+    **Solution:**
+
+    Install the appropriate OpenSSL development packages:
+
+    ```bash
+    # Red Hat-based distributions (RHEL, CentOS, Fedora)
+    sudo dnf install openssl-devel
+    
+    # Debian-based distributions (Ubuntu, Debian)
+    sudo apt-get install libssl-dev
+    ```
+  </Accordion>
+
+  <Accordion title="Binary RPM package compatibility" icon="linux">
+    **Symptoms:**
+    - RPM package fails to install
+    - Incompatibility errors with system libraries
+
+    **Important Information:**
+
+    The binary RPM package is built for specific distributions:
+    - RHEL 9.2
+    - Ubuntu 22.04
+    - SUSE SLES15 SP3
+
+    It uses:
+    - Default kernel from the distribution
+    - QAT 2.0 OOT driver
+    - QAT_SW co-existence enabled
+    - Intel Xeon Scalable Processor family with QAT Gen4/Gen4m
+
+    **After installation:**
+    ```bash
+    export LD_LIBRARY_PATH=/usr/local/ssl/lib64
+    ```
+
+    <Note>
+    If your distribution or kernel version differs, you may need to build from source instead of using the binary RPM.
+    </Note>
+  </Accordion>
+
+  <Accordion title="OpenSSL version incompatibility" icon="code-compare">
+    **Symptoms:**
+    - Runtime errors about symbol versions
+    - Application crashes when using QAT
+
+    **Cause:**
+    QAT Engine built for OpenSSL 3.0 is only compatible with libraries also linked against OpenSSL 3.0 (and vice versa for OpenSSL 1.1.1).
+
+    **Solution:**
+
+    Ensure all components use the same OpenSSL version:
+    ```bash
+    # Check OpenSSL version
+    openssl version
+    
+    # Check what libssl version your application uses
+    ldd /path/to/application | grep libssl
+    
+    # Rebuild QAT Engine against the correct OpenSSL version
+    ./configure --with-openssl_install_dir=/path/to/correct/openssl
+    make clean
+    make
+    make install
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Memory and Resource Issues
+
+<AccordionGroup>
+  <Accordion title="USDM memory allocation failures" icon="memory">
+    **Symptoms:**
+    - Failures with USDM memory allocation
+    - Out of memory errors
+
+    **Solution:**
+
+    1. **Check current memlock limit:**
+    ```bash
+    ulimit -l
+    ```
+
+    2. **Increase memlock limit:**
+    ```bash
+    # Temporary (current session)
+    ulimit -l unlimited
+    
+    # Permanent (add to /etc/security/limits.conf)
+    * soft memlock unlimited
+    * hard memlock unlimited
+    ```
+
+    3. **Verify the change:**
+    ```bash
+    ulimit -l
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Algorithm Support Issues
+
+<AccordionGroup>
+  <Accordion title="Legacy/insecure algorithms disabled" icon="shield">
+    **Symptoms:**
+    - DH, DSA, SHA1 operations fail
+    - RSA with key sizes < 2048 bits fail
+    - EC curves < 256 bits fail
+
+    **Cause:**
+    These algorithms are considered insecure and are disabled by default in both QAT HW driver and QAT Engine.
+
+    **Solution (use with caution):**
+
+    1. **Rebuild QAT HW driver with legacy algorithms:**
+    ```bash
+    cd /path/to/qat_driver
+    ./configure --enable-legacy-algorithms
+    make
+    make install
+    ```
+
+    2. **Rebuild QAT Engine with insecure algorithms:**
+    ```bash
+    cd /path/to/qat_engine
+    ./configure --enable-qat_insecure_algorithms
+    make
+    make install
+    ```
+
+    <Warning>
+    Only enable legacy/insecure algorithms if absolutely necessary for compatibility. They are disabled by default for security reasons.
+    </Warning>
+  </Accordion>
+</AccordionGroup>
+
+## Getting More Help
+
+If you encounter issues not covered here:
+
+1. **Enable debug logging** to get more information (see [Debugging](/troubleshooting/debugging))
+2. **Check the limitations** page for known constraints
+3. **Review the GitHub issues** for similar problems and solutions
+4. **Contact Intel support** or open a GitHub issue with:
+   - QAT Engine version
+   - OpenSSL version
+   - Driver version
+   - Operating system and kernel version
+   - Full error messages and logs
+   - Steps to reproduce the issue

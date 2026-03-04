@@ -1,0 +1,181 @@
+---
+title: Application Integration
+description: Integrate Intel QAT Engine with popular applications like NGINX and HAProxy
+---
+
+The Intel QAT Engine can be integrated with various applications to provide hardware-accelerated cryptographic operations. This guide covers integration with NGINX and HAProxy, two widely-used web servers and load balancers.
+
+## NGINX Integration
+
+### Asynchronous Mode NGINX with QAT
+
+NGINX with asynchronous mode for Intel QAT Engine provides significant performance improvement with QAT acceleration. The asynchronous mode enables NGINX to handle cryptographic operations without blocking, maximizing throughput.
+
+#### Installation
+
+The asynchronous fork of NGINX can be found at:
+- [Intel QuickAssist Technology (QAT) Async Mode NGINX](https://github.com/intel/asynch_mode_nginx)
+
+For detailed instructions on enabling async mode NGINX with QAT hardware and software acceleration using best known configuration:
+- [Async mode for NGINX](https://intel.github.io/quickassist/qatlib/asynch_nginx.html)
+
+#### Configuration Example
+
+```nginx
+# nginx.conf
+user www-data;
+worker_processes auto;
+
+# Enable asynchronous mode
+ssl_async on;
+
+events {
+    worker_connections 1024;
+    use epoll;
+}
+
+http {
+    # SSL/TLS configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    
+    server {
+        listen 443 ssl;
+        server_name example.com;
+        
+        ssl_certificate /path/to/cert.pem;
+        ssl_certificate_key /path/to/key.pem;
+        
+        location / {
+            # Your application configuration
+        }
+    }
+}
+```
+
+### NGINX QUIC with QAT
+
+Experimental QUIC support for NGINX with Intel QAT Engine for BoringSSL Library is available. This enables hardware-accelerated cryptographic operations for QUIC protocol implementations.
+
+For more information:
+- [Experimental QUIC support for NGINX](https://www.intel.com/content/www/us/en/content-details/737522/experimental-quic-support-for-nginx.html)
+
+## HAProxy Integration
+
+HAProxy is a free, fast, and reliable reverse-proxy offering high availability, load balancing, and proxying for TCP and HTTP-based applications.
+
+### Installation
+
+1. Follow the instructions from [HAProxy Install](https://github.com/haproxy/haproxy/blob/master/INSTALL) to build and install HAProxy.
+
+2. Use the `USE_PTHREAD_EMULATION=1` option in the make command to improve performance by utilizing HAProxy's lighter locks replacing OpenSSL Pthread locks:
+
+```bash
+make TARGET=linux-glibc USE_OPENSSL=1 USE_PTHREAD_EMULATION=1
+make install
+```
+
+### Configuration
+
+Add the following options to your HAProxy configuration file along with other standard settings to utilize QAT acceleration:
+
+```haproxy
+# haproxy.cfg
+global
+    # Enable QAT engine for all algorithms
+    ssl-engine qatengine algo ALL
+    
+    # Enable asynchronous SSL mode
+    ssl-mode-async
+    
+    # Other global settings
+    maxconn 4096
+    log /dev/log local0
+
+defaults
+    mode http
+    timeout connect 5000ms
+    timeout client 50000ms
+    timeout server 50000ms
+
+frontend https_front
+    bind *:443 ssl crt /path/to/cert.pem
+    default_backend web_servers
+
+backend web_servers
+    balance roundrobin
+    server web1 192.168.1.10:80 check
+    server web2 192.168.1.11:80 check
+```
+
+### Key Configuration Options
+
+- **ssl-engine qatengine algo ALL**: Enables the QAT engine for all supported cryptographic algorithms
+- **ssl-mode-async**: Enables asynchronous SSL/TLS processing for better performance
+
+## Real-World Use Cases
+
+### High-Performance Web Serving
+
+Organizations serving HTTPS traffic at scale can leverage QAT acceleration to:
+- Reduce CPU utilization for SSL/TLS operations
+- Increase connection throughput
+- Lower latency for encrypted connections
+- Handle more concurrent connections per server
+
+### Load Balancing and SSL Offloading
+
+HAProxy with QAT acceleration is ideal for:
+- SSL/TLS termination at the edge
+- Distributing traffic across backend servers
+- Reducing computational overhead on application servers
+- Improving overall system throughput
+
+### Content Delivery Networks (CDN)
+
+CDN edge nodes can benefit from QAT acceleration for:
+- Accelerated HTTPS content delivery
+- Reduced power consumption per transaction
+- Better performance for cryptographic operations
+- Improved cost efficiency at scale
+
+## Performance Benefits
+
+Integrating QAT with NGINX and HAProxy typically provides:
+- **2-4x improvement** in SSL/TLS handshake performance
+- **Reduced CPU utilization** by 30-60% for cryptographic operations
+- **Increased throughput** for encrypted connections
+- **Lower latency** for SSL/TLS operations
+
+## Case Studies and Resources
+
+### Performance White Papers
+
+- [Intel QuickAssist Technology and OpenSSL-1.1.0: Performance](https://www.intel.com/content/www/us/en/content-details/709581/intel-quickassist-technology-and-openssl-1-1-0-performance.html)
+- [Intel QuickAssist Technology - NGINX Performance White Paper](https://networkbuilders.intel.com/solutionslibrary/intel-quickassist-technology-nginx-performance-white-paper)
+- [Accelerate HAProxy with Intel QAT](https://www.intel.com/content/www/us/en/content-details/814574/accelerating-haproxy-with-intel-quickassist-technology.html)
+
+### Additional Resources
+
+For more application integrations and case studies:
+- [Intel QuickAssist Technology Overview](https://www.intel.com/content/www/us/en/developer/topic-technology/open/quick-assist-technology/overview.html)
+
+## Best Practices
+
+### Performance Tuning
+
+1. **Configure adequate worker processes**: Match the number of worker processes to your CPU cores
+2. **Adjust async_jobs**: Set appropriate async job counts based on your workload
+3. **Monitor QAT device utilization**: Use `adf_ctl status` to verify device usage
+4. **Tune memory limits**: Ensure adequate memlock limits for USDM memory allocation
+
+### Production Deployment
+
+1. **Test thoroughly**: Validate functionality and performance in staging environments
+2. **Monitor logs**: Check application logs for QAT-related messages
+3. **Plan for fallback**: Ensure software fallback is available if QAT hardware is unavailable
+4. **Update regularly**: Keep QAT drivers, engine, and applications updated
+
+<Note>
+When deploying in production, ensure that your QAT hardware is properly configured and that the driver is running before starting NGINX or HAProxy.
+</Note>

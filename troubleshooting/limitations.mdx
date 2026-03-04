@@ -1,0 +1,330 @@
+---
+title: Known Limitations
+description: Understand platform-specific constraints, algorithm limitations, and known issues with Intel QAT Engine
+---
+
+This page documents the known limitations, constraints, and issues with the Intel QAT Engine. Understanding these limitations will help you design and deploy QAT-accelerated applications effectively.
+
+## Process and Threading Limitations
+
+### Forking Restrictions
+
+<Warning>
+When forking within an application, it is **not valid** for a cryptographic operation to be started in the parent process and completed in the child process.
+</Warning>
+
+**Limitation**: Only **one level of forking** is permitted. If a child process forks again, the Intel QAT OpenSSL Engine will not be available in that forked (grandchild) process.
+
+**Impact**: Applications that use multi-level forking (e.g., some daemon architectures) may need to reinitialize the QAT Engine in each process level or use alternative process models.
+
+**Workaround**: Design applications to use either:
+- Single-level forking only
+- Thread-based concurrency instead of process forking
+- Process pools that don't fork after initialization
+
+### Thread-Specific USDM Memory
+
+<Warning>
+When the QAT driver is configured with `--enable-icp-thread-specific-usdm`, memory allocated in one thread must be freed only by the thread that allocated it.
+</Warning>
+
+**Requirements when using thread-specific USDM**:
+
+1. If QAT Engine is the default OpenSSL engine, `OPENSSL_init_ssl()` must be called from the same thread that calls `OPENSSL_cleanup()`
+2. Incorrect cleanup can lead to segmentation faults
+3. Memory allocated in a thread is freed automatically when the thread exits, even if not explicitly freed
+
+**Example of correct usage**:
+
+```c
+void* worker_thread(void* arg) {
+    OPENSSL_init_ssl(0, NULL);
+    
+    // Perform cryptographic operations
+    // ...
+    
+    OPENSSL_cleanup();  // Must be called from same thread
+    return NULL;
+}
+```
+
+## Platform-Specific Limitations
+
+### FreeBSD Operating System
+
+<Warning>
+**Event-driven mode** of polling operation is not supported in the FreeBSD operating system or in the qatlib RPM.
+</Warning>
+
+#### FreeBSD qatlib Header Installation
+
+FreeBSD qatlib header files are not installed to the install path due to a known issue in the driver. Headers must be manually copied:
+
+```bash
+# Create destination directory from QATlib 23.09 top directory
+./install-sh -c -d '/usr/local/include/qat'
+
+# Install header files
+/usr/bin/install -c -m 644 \
+  quickassist/include/cpa.h \
+  quickassist/include/cpa_dev.h \
+  quickassist/include/cpa_types.h \
+  quickassist/include/lac/cpa_cy_common.h \
+  quickassist/include/lac/cpa_cy_dh.h \
+  quickassist/include/lac/cpa_cy_drbg.h \
+  quickassist/include/lac/cpa_cy_dsa.h \
+  quickassist/include/lac/cpa_cy_ecdh.h \
+  quickassist/include/lac/cpa_cy_ecdsa.h \
+  quickassist/include/lac/cpa_cy_ecsm2.h \
+  quickassist/include/lac/cpa_cy_ec.h \
+  quickassist/include/lac/cpa_cy_im.h \
+  quickassist/include/lac/cpa_cy_key.h \
+  quickassist/include/lac/cpa_cy_kpt.h \
+  quickassist/include/lac/cpa_cy_ln.h \
+  quickassist/include/lac/cpa_cy_nrbg.h \
+  quickassist/include/lac/cpa_cy_prime.h \
+  quickassist/include/lac/cpa_cy_rsa.h \
+  quickassist/include/lac/cpa_cy_sym_dp.h \
+  quickassist/include/lac/cpa_cy_sym.h \
+  quickassist/include/dc/cpa_dc.h \
+  quickassist/include/dc/cpa_dc_dp.h \
+  quickassist/include/dc/cpa_dc_chain.h \
+  quickassist/lookaside/access_layer/include/icp_sal_poll.h \
+  quickassist/lookaside/access_layer/include/icp_sal_user.h \
+  quickassist/lookaside/access_layer/include/icp_sal.h \
+  quickassist/lookaside/access_layer/include/icp_sal_versions.h \
+  quickassist/utilities/libusdm_drv/qae_mem.h \
+  /usr/local/include/qat
+```
+
+### BoringSSL Limitations
+
+<Warning>
+- **SVM mode** is not supported with BoringSSL library
+- Known build issue with latest BoringSSL commits; use IPP Crypto 2021.10
+- Use the specific BoringSSL commit mentioned in Software Requirements
+</Warning>
+
+**FreeBSD with BoringSSL**: Validated functionally with limited performance validation on NGINX QUIC POC.
+
+## Algorithm Limitations
+
+### Cipher Mode Restrictions
+
+#### ENCRYPT_THEN_MAC
+
+<Warning>
+QAT Engine does **not support ENCRYPT_THEN_MAC** (default) mode of operation.
+</Warning>
+
+**Impact**: When Encrypt-then-MAC is negotiated for symmetric ciphers like AES-CBC, requests will **not** be offloaded via QAT_HW and will use OpenSSL software instead.
+
+**Workaround**: Disable ENCRYPT_THEN_MAC programmatically:
+
+```c
+SSL_CTX_set_options(ctx, SSL_OP_NO_ENCRYPT_THEN_MAC);
+```
+
+<Warning>
+Disabling ENCRYPT_THEN_MAC has security implications. Evaluate the security risks for your specific use case before disabling this option.
+</Warning>
+
+#### AES-CCM Cipher Enablement
+
+<Warning>
+AES-CCM ciphers are **not enabled** in OpenSSL by default.
+</Warning>
+
+To enable AES-CCM, manually configure via `openssl.cnf`:
+
+```ini
+openssl_conf = cipher_conf
+
+[cipher_conf]
+ssl_conf = cipher_sect
+
+[cipher_sect]
+system_default = system_cipher_sect
+
+[system_cipher_sect]
+Cipherstring = ALL
+Ciphersuites = TLS_AES_128_CCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256
+```
+
+#### AES-CBC-HMAC-SHA Pipeline Feature
+
+<Warning>
+AES-CBC-HMAC-SHA chained ciphers do **not support the pipeline feature** when built with OpenSSL 3.0.
+</Warning>
+
+**Reason**: The corresponding support is not available in OpenSSL 3.0. See [OpenSSL#18298](https://github.com/openssl/openssl/issues/18298).
+
+#### AES-CBC-HMAC-SHA Padding
+
+<Warning>
+QAT Engine does not process plaintext if the length is not a multiple of AES_BLOCK_SIZE for chained cipher AES-CBC-HMAC-SHA when built with OpenSSL v3 and above.
+</Warning>
+
+**Impact**: No padding will be added to the plaintext as specified in RFC 5652 or RFC 5246.
+
+### Algorithm-Specific Limitations
+
+#### HKDF Restrictions
+
+<Warning>
+- **HKDF based on SM3** is not supported in QAT_HW
+- **HKDF infolen > 80** is not supported due to QAT driver limitation
+</Warning>
+
+**Behavior**: Requests will fall back to OpenSSL software if fallback is enabled; otherwise, failures will occur.
+
+#### Key Protection Technology (KPT)
+
+<Warning>
+- **Symmetric keys** are not protected by Key Protection Technology
+- **SVM mode** is not supported with KPT mode
+</Warning>
+
+## OpenSSL Version Compatibility
+
+### Library Compatibility
+
+<Warning>
+QAT Engine built for OpenSSL 3.0 is **only compatible** with dependent libraries also linked with OpenSSL 3.0 libraries. The same applies for OpenSSL 1.1.1.
+</Warning>
+
+**Reason**: Due to [OpenSSL#17112](https://github.com/openssl/openssl/pull/17112).
+
+**Impact**: All components must use the same OpenSSL major version:
+- QAT Engine/Provider
+- Application (NGINX, HAProxy, etc.)
+- Dependent libraries (crypto_mb, ipsec_mb, etc.)
+
+### Misleading Error Messages
+
+<Warning>
+OpenSSL 1.1.1n and OpenSSL 3.0.2 introduced a misleading error message (`undefined symbol: EVP_PKEY_get_base_id`) during engine load.
+</Warning>
+
+**Note**: This can be safely ignored as it is not a real failure. Fixed in OpenSSL 1.1.1o and OpenSSL 3.0.3.
+
+## Known Functional Issues
+
+### SSH Daemon (sshd) Incompatibility
+
+<Warning>
+There is an issue with **sshd daemon** application when using QAT as the default OpenSSL engine.
+</Warning>
+
+**Problem**: sshd closes file descriptors associated with QAT engine and driver after initializing OpenSSL.
+
+**Solution**: Apply the fix from OpenSSH 8.7+ ([commit c9f7bba](https://github.com/openssh/openssh-portable/commit/c9f7bba2e6f70b7ac1f5ea190d890cb5162ce127)).
+
+### QAT_SW SM2 in NTLS Mode
+
+<Warning>
+Known issue with QAT_SW SM2 in **ntls mode** since QAT_SW SM2 doesn't have plain sign and verify operation support in engine.
+</Warning>
+
+**Workaround**: Disable QAT_SW SM2 to work around the issue with ntls. TLS mode works correctly as it uses digestsign and digestverify.
+
+### Software Fallback Issues (OpenSSL 3.0 Engine)
+
+<Warning>
+Known issue with software fallback in OpenSSL 3.0 Engine (only) when disabled via co-existence algorithm bitmap for:
+- PRF
+- HKDF  
+- SM2
+- SM3
+</Warning>
+
+**Note**: QAT_HW PRF and QAT_HW HKDF are not accelerated in OpenSSL 3.0 engine due to [OpenSSL#21622](https://github.com/openssl/openssl/issues/21622).
+
+### Co-existence Mode Issues
+
+<Warning>
+Known issue in co-existence mode with QAT provider on OpenSSL 3.2 and above during QAT_SW offload when QAT_HW modules are not present.
+</Warning>
+
+## Performance Limitations
+
+### Multithreading Performance
+
+<Warning>
+In some cases, using QAT Engine with OpenSSL at higher thread counts can produce **worse** performance due to lock contention issues in OpenSSL.
+</Warning>
+
+**Symptoms**:
+- `native_queued_spin_lock_slowpath()` consuming CPU process idle time
+- Performance degradation with thread counts > 32
+
+**Related Issues**:
+- Performance bottleneck with locks in `engine_table_select()` - [OpenSSL#18509](https://github.com/openssl/openssl/issues/18509)
+- 3.0 performance degraded due to locking - [OpenSSL#20286](https://github.com/openssl/openssl/issues/20286)
+
+**References**:
+- [Why having more and faster cores makes my multithreaded software slower](https://serverfault.com/questions/919552/why-having-more-and-faster-cores-makes-my-multithreaded-software-slower)
+- [High system CPU usage on Linux](https://superuser.com/questions/1737747/high-system-cpu-usage-on-linux)
+
+### Algorithm-Specific Performance Issues
+
+#### ECDSA with QAT_SW
+
+<Warning>
+Known performance scaling issue (performance drop with threads > 32) with ECDSA ciphers in QAT Software acceleration using multithread mode in HAProxy.
+</Warning>
+
+**Note**: This issue is not observed when using RSA ciphers or in multi-process mode.
+
+#### SM3 Multithread Performance
+
+<Warning>
+SM3 is **disabled by default** due to performance drop observed in multithread scenarios for all cipher suites.
+</Warning>
+
+**Reason**: Additional locks at `engine_table_select` introduced by engine digest registration in OpenSSL - [OpenSSL#18509](https://github.com/openssl/openssl/issues/18509).
+
+#### Co-existence Mode Scaling
+
+<Warning>
+In co-existence mode, performance is lower than QAT_SW only when process number >= 64 due to a known issue.
+</Warning>
+
+### Platform-Specific Performance Issues
+
+#### NGINX Handshake with OpenSSL 3.0
+
+<Warning>
+NGINX handshake performance in OpenSSL 3.0 is slightly slower compared to OpenSSL 1.1.1.
+</Warning>
+
+**Note**: The same behavior is observed in OpenSSL software - [OpenSSL#21833](https://github.com/openssl/openssl/issues/21833).
+
+#### QAT 2.0 Platforms
+
+<Warning>
+Performance scaling is not linear in QAT 2.0 supported platforms for:
+- ECDSA
+- ChaCha-Poly algorithms
+</Warning>
+
+#### FreeBSD Performance
+
+<Warning>
+- Performance drop with ECDSAP256 in OpenSSL speed tests with FreeBSD 14 in-tree driver
+- Performance drop in QAT Engine with async-nginx on FreeBSD OS with asymmetric and symmetric ciphers
+</Warning>
+
+## Planning for Limitations
+
+When designing QAT-accelerated applications:
+
+1. **Review algorithm support**: Ensure your required algorithms are supported and accelerated
+2. **Test threading models**: Validate performance with your specific thread/process count
+3. **Plan fallback strategies**: Implement graceful degradation when QAT is unavailable
+4. **Monitor performance**: Establish baselines and monitor for degradation
+5. **Stay updated**: Track OpenSSL and QAT driver releases for fixes and improvements
+
+<Tip>
+Many limitations are actively being addressed in ongoing development. Check the latest release notes for updates and improvements.
+</Tip>

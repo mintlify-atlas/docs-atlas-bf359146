@@ -1,0 +1,450 @@
+---
+title: Debugging and Diagnostics
+description: Debug Intel QAT Engine issues using debug flags, log analysis, and performance troubleshooting
+---
+
+This guide covers debugging techniques and tools for troubleshooting issues with the Intel QAT Engine.
+
+## Debug Build Flags
+
+### Enable Debug Mode
+
+Debug mode provides detailed logging of QAT Engine operations, making it invaluable for troubleshooting.
+
+#### Basic Debug Build
+
+```bash
+./configure --enable-qat_debug
+make clean
+make
+make install
+```
+
+#### Debug with Custom Log File
+
+By default, debug messages are logged to the console or application log files. You can redirect them to a specific file:
+
+```bash
+./configure --enable-qat_debug --with-qat_debug_file=/opt/qat_engine.log
+make clean
+make
+make install
+```
+
+<Note>
+The debug log file path must be writable by the user running the application.
+</Note>
+
+### Enable Warning Messages
+
+For less verbose output than full debug mode, enable only warnings:
+
+```bash
+./configure --enable-qat_warnings
+make clean
+make
+make install
+```
+
+### Combined Debug Options
+
+You can combine debug and warning flags with other build options:
+
+```bash
+./configure \
+  --enable-qat_debug \
+  --enable-qat_warnings \
+  --enable-qat_hw \
+  --enable-qat_sw \
+  --with-qat_debug_file=/var/log/qat_engine.log
+make clean
+make
+make install
+```
+
+## Debug Output Locations
+
+### Console Applications
+
+For command-line tools like `openssl speed`, debug messages appear on the console:
+
+```bash
+# Run OpenSSL speed test with debug output
+openssl speed -elapsed -async_jobs 72 rsa2048
+```
+
+Example debug output:
+```
+[QAT Engine] Engine initialized successfully
+[QAT Engine] Using QAT_HW for RSA operations
+[QAT Engine] Allocated 72 async jobs
+[QAT Engine] RSA operation offloaded to QAT hardware
+```
+
+### NGINX Debug Logs
+
+For NGINX, debug messages are written to the error log:
+
+```bash
+# Check NGINX error log
+tail -f /path/to/nginx/logs/error.log
+```
+
+Example NGINX log entries:
+```
+2024/03/15 10:23:45 [debug] 12345#0: QAT Engine loaded successfully
+2024/03/15 10:23:45 [debug] 12345#0: QAT_HW devices available: 2
+2024/03/15 10:23:46 [debug] 12345#0: SSL handshake offloaded to QAT
+```
+
+### HAProxy Debug Logs
+
+For HAProxy, check the configured log destination:
+
+```bash
+# If logging to syslog
+sudo tail -f /var/log/syslog | grep -i qat
+
+# Or check HAProxy's specific log file
+tail -f /var/log/haproxy.log
+```
+
+### Custom Log File
+
+If you specified a custom debug file:
+
+```bash
+# Monitor the custom log file in real-time
+tail -f /opt/qat_engine.log
+
+# Search for specific issues
+grep -i "error" /opt/qat_engine.log
+grep -i "failed" /opt/qat_engine.log
+```
+
+## Log Analysis
+
+### Key Log Messages
+
+#### Successful Initialization
+
+```
+[QAT Engine] Engine initialized successfully
+[QAT Engine] QAT_HW: 2 devices found and initialized
+[QAT Engine] QAT_SW: Crypto_mb and IPsec_mb libraries loaded
+```
+
+#### Hardware Acceleration Active
+
+```
+[QAT Engine] RSA operation offloaded to QAT_HW
+[QAT Engine] ECDSA operation offloaded to QAT_HW
+[QAT Engine] AES-GCM operation offloaded to QAT_SW
+```
+
+#### Fallback to Software
+
+```
+[QAT Engine] QAT_HW device busy, falling back to QAT_SW
+[QAT Engine] Algorithm not supported by QAT, falling back to OpenSSL
+```
+
+### Error Messages
+
+#### Driver Issues
+
+```
+ADF_UIO_PROXY err: icp_adf_userProcessToStart: Error reading /dev/qat_dev_processes file
+QAT HW initialization Failed.
+```
+
+**Action**: Check QAT driver status with `adf_ctl status`
+
+```
+icp sal userstart fail:qat_hw_init.c
+```
+
+**Action**: Increase `NumProcesses` in driver config file
+
+#### Memory Issues
+
+```
+[QAT Engine] USDM memory allocation failed
+[QAT Engine] Cannot allocate memory for QAT operation
+```
+
+**Action**: Increase memlock limit with `ulimit -l unlimited`
+
+#### Library Loading Issues
+
+```
+[QAT Engine] Failed to load libcrypto.so
+[QAT Engine] Cannot find qatengine.so
+```
+
+**Action**: Set `LD_LIBRARY_PATH` correctly
+
+## Performance Troubleshooting
+
+### Verify Hardware Acceleration
+
+Confirm that operations are actually being offloaded to QAT hardware:
+
+```bash
+# Run OpenSSL speed test with debug enabled
+openssl speed -elapsed -async_jobs 72 rsa2048 2>&1 | grep -i "offload\|qat_hw"
+```
+
+You should see messages indicating QAT_HW offload. If not, operations may be falling back to software.
+
+### Monitor QAT Device Utilization
+
+#### Check Device Status
+
+```bash
+# View all QAT devices and their state
+adf_ctl status
+```
+
+Expected output:
+```
+Acceleration devices status:
+  qat_dev0 - type: 4xxx, inst_id: 0, node_id: 0, bsf: 0000:6b:00.0, #accel: 1 #engines: 9 state: up
+  qat_dev1 - type: 4xxx, inst_id: 1, node_id: 1, bsf: 0000:70:00.0, #accel: 1 #engines: 9 state: up
+```
+
+#### Monitor Device Statistics
+
+For detailed device statistics, check the driver's telemetry (if available):
+
+```bash
+# Example for qatlib driver
+cat /sys/kernel/debug/qat_*/fw_counters
+```
+
+### Performance Profiling
+
+#### Baseline Software Performance
+
+First, measure software-only performance:
+
+```bash
+# Disable QAT (don't load engine/provider)
+openssl speed -elapsed rsa2048
+```
+
+#### Measure QAT Hardware Performance
+
+```bash
+# With QAT engine (engine interface)
+openssl speed -engine qatengine -elapsed -async_jobs 72 rsa2048
+
+# With QAT provider (provider interface)
+openssl speed -provider qatprovider -elapsed -async_jobs 72 rsa2048
+```
+
+#### Tune Async Jobs
+
+Experiment with different async job counts:
+
+```bash
+# Test different async_jobs values
+for jobs in 8 16 32 64 72 128; do
+  echo "Testing with $jobs async jobs:"
+  openssl speed -engine qatengine -elapsed -async_jobs $jobs rsa2048
+done
+```
+
+<Tip>
+Optimal async_jobs typically ranges from 64-128 for QAT HW and 8-16 for QAT SW, but this varies by workload and hardware.
+</Tip>
+
+### Identifying Performance Bottlenecks
+
+#### CPU Utilization
+
+High CPU usage may indicate:
+- Operations falling back to software
+- Lock contention (especially at high thread counts)
+- Inefficient async job configuration
+
+```bash
+# Monitor CPU usage during test
+top -H -p $(pgrep -f "nginx\|haproxy\|openssl")
+```
+
+Look for `native_queued_spin_lock_slowpath()` consuming CPU idle time, which indicates lock contention.
+
+#### Memory Usage
+
+```bash
+# Check memory allocation
+free -h
+
+# Monitor USDM allocations (if using QAT HW)
+cat /proc/meminfo | grep -i lock
+```
+
+#### Thread Scaling Issues
+
+Test performance at different thread counts:
+
+```bash
+# Test with increasing thread counts
+for threads in 1 2 4 8 16 32 64; do
+  echo "Testing with $threads threads:"
+  # Your performance test command with specified threads
+done
+```
+
+<Note>
+In some cases, QAT Engine with OpenSSL at higher thread counts (>32) can produce worse performance due to lock contention in OpenSSL. See the [Limitations](/troubleshooting/limitations) page for details.
+</Note>
+
+## Common Debugging Scenarios
+
+### Scenario 1: No Performance Improvement
+
+**Steps:**
+
+1. **Enable debug mode** and verify QAT is loaded:
+```bash
+openssl speed -engine qatengine -elapsed rsa2048 2>&1 | grep -i "initialized"
+```
+
+2. **Check if operations are offloaded**:
+```bash
+openssl speed -engine qatengine -elapsed -async_jobs 72 rsa2048 2>&1 | grep -i "offload"
+```
+
+3. **Verify QAT devices are active**:
+```bash
+adf_ctl status
+```
+
+4. **Check driver configuration**:
+```bash
+cat /etc/*/conf | grep -E "NumProcesses|LimitDevAccess"
+```
+
+### Scenario 2: Intermittent Failures
+
+**Steps:**
+
+1. **Enable debug logging to file**:
+```bash
+./configure --enable-qat_debug --with-qat_debug_file=/var/log/qat_debug.log
+make clean && make && make install
+```
+
+2. **Reproduce the issue** and check logs:
+```bash
+tail -f /var/log/qat_debug.log
+```
+
+3. **Look for patterns** in failures:
+```bash
+grep -i "error\|fail" /var/log/qat_debug.log | sort | uniq -c
+```
+
+4. **Check system logs** for hardware issues:
+```bash
+dmesg | grep -i qat
+journalctl -xe | grep -i qat
+```
+
+### Scenario 3: Application Crashes
+
+**Steps:**
+
+1. **Check for memory issues**:
+```bash
+ulimit -l
+dmesg | grep -i "out of memory"
+```
+
+2. **Verify library compatibility**:
+```bash
+ldd /usr/local/lib/engines-3/qatengine.so
+ldd /path/to/application
+```
+
+3. **Enable core dumps**:
+```bash
+ulimit -c unlimited
+# Reproduce crash
+# Analyze with gdb:
+gdb /path/to/application core
+```
+
+4. **Run with valgrind** (if performance allows):
+```bash
+valgrind --leak-check=full /path/to/application
+```
+
+## Advanced Debugging Tools
+
+### strace for System Call Tracing
+
+```bash
+# Trace OpenSSL operations
+strace -e trace=open,read,write,ioctl openssl speed -engine qatengine rsa2048
+
+# Trace application startup
+strace -f -o /tmp/trace.log /path/to/application
+```
+
+### lsof for File Descriptor Leaks
+
+```bash
+# Check QAT device file descriptors
+lsof | grep qat_dev
+
+# Monitor file descriptors over time
+watch -n 1 'lsof -p $(pgrep application) | wc -l'
+```
+
+### perf for Performance Analysis
+
+```bash
+# Profile application
+sudo perf record -g -p $(pgrep application)
+sudo perf report
+
+# Identify hot spots
+sudo perf top -p $(pgrep application)
+```
+
+## Debug Checklist
+
+When troubleshooting QAT issues, work through this checklist:
+
+- [ ] QAT driver installed and devices showing "state: up"
+- [ ] QAT Engine/Provider built with debug flags
+- [ ] OPENSSL_ENGINES or OpenSSL config properly set
+- [ ] LD_LIBRARY_PATH includes OpenSSL libraries
+- [ ] Memlock limits set adequately
+- [ ] NumProcesses configured in driver config
+- [ ] Debug logs captured and reviewed
+- [ ] Performance compared with software baseline
+- [ ] QAT device utilization verified
+- [ ] Application-specific logs checked
+
+## Getting Support
+
+When reporting issues, include:
+
+1. **Version information**:
+```bash
+openssl version
+adf_ctl --version  # or qatlib version
+uname -a
+```
+
+2. **Debug logs** from reproduction
+
+3. **Configuration files** (sanitized)
+
+4. **Steps to reproduce** the issue
+
+5. **Expected vs. actual behavior**

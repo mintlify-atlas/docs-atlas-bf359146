@@ -1,0 +1,320 @@
+---
+title: Symmetric Ciphers
+description: QAT Hardware acceleration for symmetric encryption including AES-CBC-HMAC-SHA, AES-GCM, AES-CCM, ChaCha20-Poly1305, and SM4-CBC
+---
+
+The Intel QAT Engine provides hardware acceleration for authenticated encryption and traditional cipher modes.
+
+## AES-CBC-HMAC-SHA
+
+Combined AES-CBC encryption with HMAC-SHA authentication.
+
+### Supported Variants
+
+| Cipher | Key Size | MAC | Default Enabled | Platform Support |
+|--------|----------|-----|-----------------|------------------|
+| AES-128-CBC-HMAC-SHA1   | 128-bit | SHA-1   | No (insecure) | All platforms |
+| AES-256-CBC-HMAC-SHA1   | 256-bit | SHA-1   | No (insecure) | All platforms |
+| AES-128-CBC-HMAC-SHA256 | 128-bit | SHA-256 | No (insecure) | All platforms |
+| AES-256-CBC-HMAC-SHA256 | 256-bit | SHA-256 | Yes           | All platforms |
+
+### Usage Example
+
+```c
+#include <openssl/evp.h>
+#include <openssl/engine.h>
+
+ENGINE *e = ENGINE_by_id("qatengine");
+ENGINE_init(e);
+
+EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+const EVP_CIPHER *cipher = EVP_aes_256_cbc_hmac_sha256();
+
+// Initialize for encryption
+unsigned char key[32]; // 256-bit key
+unsigned char iv[16];  // 128-bit IV
+EVP_EncryptInit_ex(ctx, cipher, e, key, iv);
+
+// Encrypt data
+unsigned char plaintext[1024];
+unsigned char ciphertext[1024 + EVP_CIPHER_block_size(cipher)];
+int outlen;
+EVP_EncryptUpdate(ctx, ciphertext, &outlen, plaintext, sizeof(plaintext));
+
+// Finalize
+int tmplen;
+EVP_EncryptFinal_ex(ctx, ciphertext + outlen, &tmplen);
+outlen += tmplen;
+
+EVP_CIPHER_CTX_free(ctx);
+```
+
+## AES-GCM
+
+AES Galois/Counter Mode - authenticated encryption with associated data (AEAD).
+
+### Supported Variants
+
+| Cipher | Key Size | Default Enabled | Platform Support |
+|--------|----------|-----------------|------------------|
+| AES-128-GCM | 128-bit | No (insecure) | All platforms |
+| AES-256-GCM | 256-bit | No (experimental) | All platforms |
+
+### Usage Example
+
+```c
+#include <openssl/evp.h>
+#include <openssl/engine.h>
+
+ENGINE *e = ENGINE_by_id("qatengine");
+ENGINE_init(e);
+
+EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+const EVP_CIPHER *cipher = EVP_aes_256_gcm();
+
+// Initialize for encryption
+unsigned char key[32];  // 256-bit key
+unsigned char iv[12];   // 96-bit IV (recommended)
+EVP_EncryptInit_ex(ctx, cipher, e, key, iv);
+
+// Optional: Add Additional Authenticated Data (AAD)
+unsigned char aad[32];
+int aad_len = sizeof(aad);
+int outlen;
+EVP_EncryptUpdate(ctx, NULL, &outlen, aad, aad_len);
+
+// Encrypt data
+unsigned char plaintext[1024];
+unsigned char ciphertext[1024];
+EVP_EncryptUpdate(ctx, ciphertext, &outlen, plaintext, sizeof(plaintext));
+
+// Finalize
+int tmplen;
+EVP_EncryptFinal_ex(ctx, ciphertext + outlen, &tmplen);
+outlen += tmplen;
+
+// Get authentication tag
+unsigned char tag[16];
+EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag);
+
+EVP_CIPHER_CTX_free(ctx);
+```
+
+### Decryption Example
+
+```c
+EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+const EVP_CIPHER *cipher = EVP_aes_256_gcm();
+
+// Initialize for decryption
+EVP_DecryptInit_ex(ctx, cipher, e, key, iv);
+
+// Optional: Add AAD
+EVP_DecryptUpdate(ctx, NULL, &outlen, aad, aad_len);
+
+// Decrypt data
+unsigned char decrypted[1024];
+EVP_DecryptUpdate(ctx, decrypted, &outlen, ciphertext, ciphertext_len);
+
+// Set expected tag before finalization
+EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, tag);
+
+// Finalize and verify tag
+int ret = EVP_DecryptFinal_ex(ctx, decrypted + outlen, &tmplen);
+if (ret > 0) {
+    // Authentication successful
+    outlen += tmplen;
+} else {
+    // Authentication failed
+}
+
+EVP_CIPHER_CTX_free(ctx);
+```
+
+## AES-CCM
+
+AES Counter with CBC-MAC mode - authenticated encryption.
+
+### Supported Variants
+
+| Cipher | Key Size | Default Enabled | Platform Support |
+|--------|----------|-----------------|------------------|
+| AES-128-CCM | 128-bit | No (insecure) | All platforms |
+| AES-192-CCM | 192-bit | No (insecure) | QAT 2.0+, qatlib |
+| AES-256-CCM | 256-bit | Yes           | QAT 2.0+, qatlib |
+
+### Usage Example
+
+```c
+#include <openssl/evp.h>
+#include <openssl/engine.h>
+
+ENGINE *e = ENGINE_by_id("qatengine");
+ENGINE_init(e);
+
+EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+const EVP_CIPHER *cipher = EVP_aes_256_ccm();
+
+unsigned char key[32];  // 256-bit key
+unsigned char iv[12];   // IV length (7-13 bytes)
+unsigned char tag[16];  // Authentication tag
+
+// Initialize cipher
+EVP_EncryptInit_ex(ctx, cipher, e, NULL, NULL);
+
+// Set IV length
+EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_IVLEN, sizeof(iv), NULL);
+
+// Set tag length
+EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_TAG, sizeof(tag), NULL);
+
+// Set key and IV
+EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv);
+
+// Set plaintext length (required for CCM)
+unsigned char plaintext[1024];
+int plaintext_len = sizeof(plaintext);
+EVP_EncryptUpdate(ctx, NULL, &outlen, NULL, plaintext_len);
+
+// Optional: Add AAD
+unsigned char aad[32];
+EVP_EncryptUpdate(ctx, NULL, &outlen, aad, sizeof(aad));
+
+// Encrypt
+unsigned char ciphertext[1024];
+EVP_EncryptUpdate(ctx, ciphertext, &outlen, plaintext, plaintext_len);
+
+// Finalize
+int tmplen;
+EVP_EncryptFinal_ex(ctx, ciphertext + outlen, &tmplen);
+outlen += tmplen;
+
+// Get tag
+EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_GET_TAG, sizeof(tag), tag);
+
+EVP_CIPHER_CTX_free(ctx);
+```
+
+## ChaCha20-Poly1305
+
+Modern AEAD cipher combining ChaCha20 stream cipher with Poly1305 MAC.
+
+### Platform Support
+
+| Platform | Default Enabled | Notes |
+|----------|-----------------|-------|
+| QAT 1.8+ | No (experimental) | Requires build configuration |
+| QAT 2.0  | No (experimental) | Requires build configuration |
+| qatlib   | No (experimental) | Requires build configuration |
+
+### Usage Example
+
+```c
+#include <openssl/evp.h>
+#include <openssl/engine.h>
+
+ENGINE *e = ENGINE_by_id("qatengine");
+ENGINE_init(e);
+
+EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+const EVP_CIPHER *cipher = EVP_chacha20_poly1305();
+
+// Initialize for encryption
+unsigned char key[32];  // 256-bit key
+unsigned char iv[12];   // 96-bit nonce
+EVP_EncryptInit_ex(ctx, cipher, e, key, iv);
+
+// Optional: Add AAD
+unsigned char aad[32];
+int outlen;
+EVP_EncryptUpdate(ctx, NULL, &outlen, aad, sizeof(aad));
+
+// Encrypt data
+unsigned char plaintext[1024];
+unsigned char ciphertext[1024];
+EVP_EncryptUpdate(ctx, ciphertext, &outlen, plaintext, sizeof(plaintext));
+
+// Finalize
+int tmplen;
+EVP_EncryptFinal_ex(ctx, ciphertext + outlen, &tmplen);
+outlen += tmplen;
+
+// Get authentication tag
+unsigned char tag[16];
+EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, 16, tag);
+
+EVP_CIPHER_CTX_free(ctx);
+```
+
+## SM4-CBC
+
+Chinese National Standard block cipher (Tongsuo only).
+
+### Platform Support
+
+| Platform | Default Enabled | Notes |
+|----------|-----------------|-------|
+| QAT 1.8  | No (disabled)   | Tongsuo-specific, not for OpenSSL |
+| QAT 2.0  | No (disabled)   | Tongsuo-specific, not for OpenSSL |
+
+### Notes
+
+- Only available when QAT Engine is built with Tongsuo (fork of OpenSSL)
+- Not applicable to standard OpenSSL builds
+- Disabled by default in all configurations
+
+## General Usage Notes
+
+### Engine Initialization
+
+All cipher operations require the QAT engine to be loaded and initialized:
+
+```c
+#include <openssl/engine.h>
+
+// Load and initialize engine
+ENGINE *e = ENGINE_by_id("qatengine");
+if (!e) {
+    // Handle error
+}
+
+if (!ENGINE_init(e)) {
+    // Handle error
+}
+
+// Use engine for cipher operations
+// ...
+
+// Cleanup
+ENGINE_finish(e);
+ENGINE_free(e);
+```
+
+### Error Handling
+
+Always check return values from OpenSSL functions:
+
+```c
+if (EVP_EncryptInit_ex(ctx, cipher, e, key, iv) != 1) {
+    // Handle initialization error
+    ERR_print_errors_fp(stderr);
+}
+```
+
+### Software Fallback
+
+The QAT engine automatically falls back to OpenSSL software implementation when:
+- QAT hardware is unavailable
+- Request queue is full
+- Operation is not supported by hardware
+
+## Performance Considerations
+
+- AEAD ciphers (GCM, CCM, ChaCha20-Poly1305) benefit most from hardware acceleration
+- Larger payload sizes (> 2KB) see better performance gains
+- Asynchronous operations provide better throughput in high-concurrency scenarios
+- Consider enabling heuristic polling for optimal performance
+
+## Platform Support Matrix
+
+Refer to the [algorithm support table](/installation/build-options) for detailed platform-specific availability and default settings.

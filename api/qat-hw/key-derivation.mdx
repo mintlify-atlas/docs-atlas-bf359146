@@ -1,0 +1,302 @@
+---
+title: Key Derivation Functions
+description: QAT Hardware acceleration for TLS PRF and HKDF key derivation functions
+---
+
+The Intel QAT Engine provides hardware acceleration for key derivation functions (KDFs) used in TLS/SSL protocols and general cryptographic applications.
+
+## TLS PRF (Pseudo-Random Function)
+
+The TLS PRF is used in TLS 1.0, 1.1, and 1.2 to generate key material from a secret.
+
+### Platform Support
+
+| Platform | Default Enabled | Notes |
+|----------|-----------------|-------|
+| QAT 1.7  | Yes | TLS 1.2 PRF |
+| QAT 1.8  | Yes | TLS 1.2 PRF |
+| QAT 2.0  | Yes | TLS 1.2 PRF |
+| qatlib   | Yes | TLS 1.2 PRF |
+
+### Supported Hash Algorithms
+
+The PRF supports the following hash functions:
+- **SHA-256** (TLS 1.2 default)
+- **SHA-384**
+- **SHA-512**
+- **MD5+SHA-1** (TLS 1.0/1.1, legacy)
+
+### Configuration
+
+The TLS PRF is automatically used by OpenSSL when:
+1. The QAT engine is loaded and initialized
+2. A TLS connection is established
+3. Key material needs to be derived
+
+### Usage with OpenSSL EVP API
+
+```c
+#include <openssl/evp.h>
+#include <openssl/kdf.h>
+#include <openssl/engine.h>
+
+ENGINE *e = ENGINE_by_id("qatengine");
+ENGINE_init(e);
+
+EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_TLS1_PRF, e);
+if (!pctx) {
+    // Handle error
+}
+
+if (EVP_PKEY_derive_init(pctx) <= 0) {
+    // Handle error
+}
+
+// Set digest (e.g., SHA-256 for TLS 1.2)
+if (EVP_PKEY_CTX_set_tls1_prf_md(pctx, EVP_sha256()) <= 0) {
+    // Handle error
+}
+
+// Set secret (master secret or other key material)
+unsigned char secret[48];
+if (EVP_PKEY_CTX_set1_tls1_prf_secret(pctx, secret, sizeof(secret)) <= 0) {
+    // Handle error
+}
+
+// Set seed (label + context data)
+unsigned char seed[128];
+if (EVP_PKEY_CTX_add1_tls1_prf_seed(pctx, seed, sizeof(seed)) <= 0) {
+    // Handle error
+}
+
+// Derive key material
+unsigned char out[256];
+size_t outlen = sizeof(out);
+if (EVP_PKEY_derive(pctx, out, &outlen) <= 0) {
+    // Handle error
+}
+
+EVP_PKEY_CTX_free(pctx);
+ENGINE_finish(e);
+ENGINE_free(e);
+```
+
+### TLS Integration
+
+When using OpenSSL's TLS implementation with the QAT engine:
+
+```c
+#include <openssl/ssl.h>
+#include <openssl/engine.h>
+
+ENGINE *e = ENGINE_by_id("qatengine");
+ENGINE_init(e);
+
+SSL_CTX *ctx = SSL_CTX_new(TLS_method());
+
+// The engine will automatically accelerate PRF operations
+// during the TLS handshake and key derivation
+
+SSL *ssl = SSL_new(ctx);
+// ... establish connection ...
+
+// PRF is used internally for:
+// - Master secret derivation
+// - Key expansion for session keys
+// - Finished message verification
+
+SSL_free(ssl);
+SSL_CTX_free(ctx);
+ENGINE_finish(e);
+ENGINE_free(e);
+```
+
+## HKDF (HMAC-based Key Derivation Function)
+
+HKDF is a modern KDF specified in RFC 5869, providing extract-and-expand functionality.
+
+### Platform Support
+
+| Platform | Default Enabled | Notes |
+|----------|-----------------|-------|
+| QAT 1.7  | No (experimental) | Disabled by default |
+| QAT 1.8  | No (experimental) | Disabled by default |
+| QAT 2.0  | No (experimental) | Disabled by default |
+| qatlib   | No (experimental) | Disabled by default |
+
+### Supported Hash Algorithms
+
+HKDF supports all standard HMAC-compatible hash functions:
+- **SHA-224**
+- **SHA-256**
+- **SHA-384**
+- **SHA-512**
+
+### Modes of Operation
+
+HKDF operates in two modes:
+
+1. **Extract-and-Expand** (full HKDF)
+   - Extract: Derive a pseudorandom key from input key material
+   - Expand: Expand the PRK into multiple output keys
+
+2. **Expand-Only**
+   - Skip extraction phase when input is already a strong key
+
+### Configuration
+
+HKDF is experimental and disabled by default. Check the [configuration guide](/installation/build-options) for platform-specific enable flags.
+
+### Usage with OpenSSL EVP API
+
+#### Extract-and-Expand Mode
+
+```c
+#include <openssl/evp.h>
+#include <openssl/kdf.h>
+#include <openssl/engine.h>
+
+ENGINE *e = ENGINE_by_id("qatengine");
+ENGINE_init(e);
+
+EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, e);
+if (!pctx) {
+    // Handle error
+}
+
+if (EVP_PKEY_derive_init(pctx) <= 0) {
+    // Handle error
+}
+
+// Set HKDF mode to extract-and-expand
+if (EVP_PKEY_CTX_set_hkdf_mode(pctx, EVP_PKEY_HKDEF_MODE_EXTRACT_AND_EXPAND) <= 0) {
+    // Handle error
+}
+
+// Set digest
+if (EVP_PKEY_CTX_set_hkdf_md(pctx, EVP_sha256()) <= 0) {
+    // Handle error
+}
+
+// Set input key material (IKM)
+unsigned char ikm[32];
+if (EVP_PKEY_CTX_set1_hkdf_key(pctx, ikm, sizeof(ikm)) <= 0) {
+    // Handle error
+}
+
+// Set salt (optional)
+unsigned char salt[16];
+if (EVP_PKEY_CTX_set1_hkdf_salt(pctx, salt, sizeof(salt)) <= 0) {
+    // Handle error
+}
+
+// Set info (context and application specific information)
+unsigned char info[64];
+if (EVP_PKEY_CTX_add1_hkdf_info(pctx, info, sizeof(info)) <= 0) {
+    // Handle error
+}
+
+// Derive output key material (OKM)
+unsigned char okm[128];
+size_t okmlen = sizeof(okm);
+if (EVP_PKEY_derive(pctx, okm, &okmlen) <= 0) {
+    // Handle error
+}
+
+EVP_PKEY_CTX_free(pctx);
+ENGINE_finish(e);
+ENGINE_free(e);
+```
+
+#### Expand-Only Mode
+
+```c
+EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, e);
+EVP_PKEY_derive_init(pctx);
+
+// Set mode to expand-only
+EVP_PKEY_CTX_set_hkdf_mode(pctx, EVP_PKEY_HKDEF_MODE_EXPAND_ONLY);
+
+// Set digest
+EVP_PKEY_CTX_set_hkdf_md(pctx, EVP_sha256());
+
+// Set PRK (pseudorandom key from extract phase or existing strong key)
+unsigned char prk[32];
+EVP_PKEY_CTX_set1_hkdf_key(pctx, prk, sizeof(prk));
+
+// Set info
+unsigned char info[64];
+EVP_PKEY_CTX_add1_hkdf_info(pctx, info, sizeof(info));
+
+// Derive OKM
+unsigned char okm[128];
+size_t okmlen = sizeof(okm);
+EVP_PKEY_derive(pctx, okm, &okmlen);
+
+EVP_PKEY_CTX_free(pctx);
+```
+
+### Limitations
+
+The QAT HKDF implementation has the following constraints:
+
+- **Maximum info length**: 1024 bytes (QAT_HKDF_INFO_MAXBUF)
+- **Maximum output length**: Limited by hash function (255 × hash_len)
+
+## Performance Considerations
+
+### TLS PRF
+
+- Hardware acceleration provides the most benefit during TLS handshakes
+- Performance gains increase with:
+  - Larger derived key material sizes
+  - Multiple concurrent TLS sessions
+  - High-throughput scenarios
+
+### HKDF
+
+- Extract-and-expand mode benefits from hardware acceleration of both HMAC operations
+- Expand-only mode is faster but requires a strong PRK
+- Larger output key sizes see better hardware acceleration benefits
+
+## Software Fallback
+
+Both PRF and HKDF automatically fall back to OpenSSL software implementation when:
+
+- QAT hardware is unavailable
+- Operation parameters exceed hardware limits
+- Request queue is full
+- Algorithm is disabled or unsupported on the platform
+
+## Error Handling
+
+Always check return values and handle errors appropriately:
+
+```c
+if (EVP_PKEY_derive(pctx, out, &outlen) <= 0) {
+    unsigned long err = ERR_get_error();
+    char err_buf[256];
+    ERR_error_string_n(err, err_buf, sizeof(err_buf));
+    fprintf(stderr, "KDF error: %s\n", err_buf);
+}
+```
+
+## Use Cases
+
+### TLS PRF
+
+- TLS/SSL session key derivation
+- Master secret derivation
+- Finished message verification
+- Exporters for additional key material
+
+### HKDF
+
+- Protocol key derivation (e.g., QUIC, Noise Protocol)
+- Password-based key derivation (with strong salt)
+- Key separation and expansion
+- Deriving multiple keys from a single master secret
+
+## Platform Support Matrix
+
+For detailed platform-specific availability and default settings, refer to the [algorithm support table](/installation/build-options).

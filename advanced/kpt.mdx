@@ -1,0 +1,154 @@
+---
+title: 'Key Protection Technology'
+description: 'Enable secure delivery and protection of networking security credentials using QAT KPT'
+---
+
+## Overview
+
+Key Protection Technology (KPT) enables customers to securely deliver their networking security sensitive credentials to Intel platforms. Platforms with Intel QuickAssist Technology (QAT) IP deliver this capability, protecting customer keys within the QAT IP while in transport or in use.
+
+The QAT Engine with KPT feature exposes KPT 2.0 asymmetric cryptographic capabilities to applications such as Nginx, OpenSSL, and other services.
+
+### Supported Algorithms
+
+**Asymmetric Cryptography:**
+- **RSA**: 512, 1024, 2048, 4096, 8192-bit key sizes
+- **ECDSA**: P-256r1, P-384r1, P-521r1 curves
+
+## Requirements
+
+### Hardware
+
+The Key Protection Technology feature requires:
+- QAT acceleration devices with KPT capability
+- Platform with Intel Xeon with QAT 4XXX Series Chipset
+
+### Key Protection Technology Library
+
+The KPT library provides key protection services for applications using Intel security hardware technology. The Intel QAT OpenSSL Engine includes the KPT library in its `kpt/lib` subdirectory.
+
+For detailed library information, refer to the [KPT library README](/advanced/kpt#kpt-library).
+
+## Building with KPT Support
+
+To build the Intel QAT OpenSSL Engine with KPT support, add the `--enable-qat_hw_kpt` flag:
+
+```bash
+cd QAT_Engine
+./autogen.sh
+./configure \
+  --enable-qat_hw_kpt \
+  --with-qat_hw_dir=/{driver_package_dir} \
+  --with-openssl_install_dir=/{openssl_install_dir}
+
+make clean -j
+make -j && make install -j
+```
+
+## KPT Tool
+
+The Wrapped Private Key (WPK) file is a customized PEM file used by the KPT feature. The KPT Tool is provided to create or parse standard WPK files according to the WPK format definition.
+
+### Building the KPT Tool
+
+Build the tool using:
+
+```bash
+make kpttool
+```
+
+<Warning>
+  Re-generate the WPK file when the platform is changed.
+</Warning>
+
+### Usage
+
+```bash
+kpttool -act [gen|par] -alg [rsa|ecc] -in [<cpk.key>|<wpk.key>] -out <wpk.key>
+```
+
+**Parameters:**
+- `-act` (action): `gen` (generate WPK) or `par` (parse WPK)
+- `-alg` (algorithm): `rsa` or `ecc`
+- `-in`: Input CPK (customer private key) file for generation, or WPK file for parsing
+- `-out`: Output WPK file (generation only)
+
+**Examples:**
+
+```bash
+# Generate ECC wrapped private key
+kpttool -act gen -alg ecc -in ec_secp256r1_private.key -out ec_secp256r1_wpk.key
+
+# Parse ECC wrapped private key
+kpttool -act par -alg ecc -in ec_secp256r1_wpk.key
+
+# Generate RSA wrapped private key
+kpttool -act gen -alg rsa -in rsa_2k_private.key -out rsa_2k_wpk.key
+
+# Parse RSA wrapped private key
+kpttool -act par -alg rsa -in rsa_2k_wpk.key
+```
+
+## Use Cases
+
+### OpenSSL Command Line
+
+#### RSA Operations
+
+```bash
+# RSA Encryption
+echo 123123123123 > plain.txt
+openssl rsautl --encrypt -in plain.txt -out cipher.txt -inkey rsa2k.pem
+
+# RSA Decryption
+openssl rsautl --decrypt -in cipher.txt -out decrypt.txt \
+  -keyform engine -engine qatengine -inkey wpk_rsa2k.pem
+
+# RSA Sign
+openssl dgst -sign wpk_rsa2k.pem -keyform ENGINE \
+  -engine qatengine plain.txt > digest.txt
+
+# RSA Verify
+openssl dgst -verify rsa2k_pub.pem -signature digest.txt verify.txt
+```
+
+#### ECDSA Operations
+
+```bash
+# ECDSA Sign
+openssl dgst -sign wpk_secp521r1.pem -keyform ENGINE \
+  -engine qatengine plain.txt > digest.txt
+
+# ECDSA Verify
+openssl dgst -verify secp521r1_pub.pem -signature digest.txt verify.txt
+```
+
+### Nginx Integration
+
+To use KPT with Nginx, prefix the WPK file path with `engine:qatengine:` in the `ssl_certificate_key` directive:
+
+```nginx
+server {
+  ssl_certificate     cert.crt;
+  ssl_certificate_key engine:qatengine:wpk_file.pem;
+}
+```
+
+This instructs Nginx to load the WPK file using the QAT Engine instead of the default function.
+
+## Known Issues and Limitations
+
+<Warning>
+  **Worker-Instance Model Changes**: The maximum worker number changes from 64 to 63 when each worker is assigned 1 instance, as KPT needs to get the instance in the master node to load the WPK file. Using 64 workers will cause `nginx -s xxx` commands to fail, requiring forceful termination of all nginx processes.
+</Warning>
+
+1. **Shared Mode**: Non-shared mode is implemented by default. Shared mode is not supported.
+
+2. **SWK Provision Quota**: Each device has a limit of 128 SWK provisions. Exceeding this limit results in error code -3 (CPA_CY_KPT_LOADKEY_FAIL_QUOTA_EXCEEDED).
+
+   Formula: `num_instance * num_server_block(using WPK file) <= 128`
+   
+   - With 64 workers: maximum 2 server blocks can use WPK files
+   - With 1 server block using WPK: maximum 128 workers allowed
+
+3. **Software Fallback**: The `sw_fallback` directive is not supported when KPT capability is enabled.

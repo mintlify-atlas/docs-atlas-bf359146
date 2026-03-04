@@ -1,0 +1,602 @@
+---
+title: 'Engine Control Messages'
+description: 'Engine-specific control commands for configuring and controlling the QAT Engine'
+---
+
+## Overview
+
+The QAT Engine supports custom control messages that allow applications to communicate directly with the engine. These messages serve two primary purposes:
+
+1. **Configuration**: Set engine options before initialization
+2. **Runtime Control**: Control engine operation during execution
+
+## Using Engine Control Messages
+
+Engine control messages use the OpenSSL `ENGINE_ctrl_cmd()` function:
+
+```c
+ENGINE_ctrl_cmd(<Engine>, <Message String>, <Param 3>, <Param 4>, NULL, 0);
+```
+
+### Parameters
+
+<ParamField path="Engine" type="ENGINE*">
+  Pointer to the QAT Engine instance
+</ParamField>
+
+<ParamField path="Message String" type="const char*">
+  String identifying the message type (see reference table below)
+</ParamField>
+
+<ParamField path="Param 3" type="long">
+  Long integer for passing numbers, or a pointer cast to long
+</ParamField>
+
+<ParamField path="Param 4" type="void*">
+  Void pointer for passing data structures
+</ParamField>
+
+<Note>
+The last two parameters to `ENGINE_ctrl_cmd()` are always `NULL` and `0` when used with the QAT Engine.
+</Note>
+
+## Polling Mode Messages
+
+### ENABLE_EXTERNAL_POLLING
+
+<ParamField path="Param 3" type="long" default="0">
+  Not used
+</ParamField>
+
+<ParamField path="Param 4" type="void*" default="NULL">
+  Not used
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  After engine creation, before initialization
+</ParamField>
+
+Enables external polling mode where the application is responsible for polling the hardware accelerator using the `POLL` message.
+
+**Example:**
+```c
+ENGINE_ctrl_cmd(e, "ENABLE_EXTERNAL_POLLING", 0, NULL, NULL, 0);
+```
+
+### POLL
+
+<ParamField path="Param 3" type="long" default="0">
+  Not used
+</ParamField>
+
+<ParamField path="Param 4" type="int*" required>
+  Pointer to int that receives the poll status
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  Any time after engine initialization
+</ParamField>
+
+Requests a poll of all instances when external polling is enabled. The poll status is returned in the variable passed as Param 4.
+
+**Example:**
+```c
+int poll_status;
+ENGINE_ctrl_cmd(e, "POLL", 0, &poll_status, NULL, 0);
+```
+
+### ENABLE_EVENT_DRIVEN_POLLING_MODE
+
+<ParamField path="Param 3" type="long" default="0">
+  Not used
+</ParamField>
+
+<ParamField path="Param 4" type="void*" default="NULL">
+  Not used
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  After engine creation, before initialization
+</ParamField>
+
+Enables event-driven polling using the QAT driver's event notification feature.
+
+<Warning>
+Not supported on FreeBSD or with qatlib RPM.
+</Warning>
+
+### DISABLE_EVENT_DRIVEN_POLLING_MODE
+
+<ParamField path="Param 3" type="long" default="0">
+  Not used
+</ParamField>
+
+<ParamField path="Param 4" type="void*" default="NULL">
+  Not used
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  After engine creation, before initialization
+</ParamField>
+
+Switches back to timer-based polling mode.
+
+<Warning>
+Not supported on FreeBSD or with qatlib RPM.
+</Warning>
+
+### ENABLE_INLINE_POLLING
+
+<ParamField path="Param 3" type="long" default="0">
+  Not used
+</ParamField>
+
+<ParamField path="Param 4" type="void*" default="NULL">
+  Not used
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  After engine creation, before initialization
+</ParamField>
+
+Enables inline polling mode where a busy loop checks for messages from the hardware accelerator after requests are sent.
+
+<Info>
+Currently only available for synchronous RSA computation.
+</Info>
+
+### ENABLE_HEURISTIC_POLLING
+
+<ParamField path="Param 3" type="long" default="0">
+  Not used
+</ParamField>
+
+<ParamField path="Param 4" type="void*" default="NULL">
+  Not used
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  After engine creation, before initialization
+</ParamField>
+
+Enables heuristic polling mode where applications can intelligently determine when to poll based on in-flight request counts.
+
+<Note>
+Requires external polling mode to be enabled first.
+</Note>
+
+## Polling Configuration Messages
+
+### SET_INTERNAL_POLL_INTERVAL
+
+<ParamField path="Param 3" type="unsigned long">
+  Interval in nanoseconds (min: 1, max: 10,000,000, default: 10,000)
+</ParamField>
+
+<ParamField path="Param 4" type="void*" default="NULL">
+  Not used
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  Any time after engine creation
+</ParamField>
+
+Sets the interval between polls for messages from the hardware accelerator.
+
+**Example:**
+```c
+ENGINE_ctrl_cmd(e, "SET_INTERNAL_POLL_INTERVAL", 15000, NULL, NULL, 0);
+```
+
+### SET_EPOLL_TIMEOUT
+
+<ParamField path="Param 3" type="int">
+  Timeout in milliseconds (min: 1, max: 10,000, default: 1,000)
+</ParamField>
+
+<ParamField path="Param 4" type="void*" default="NULL">
+  Not used
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  Any time after engine creation
+</ParamField>
+
+Sets the timeout for `epoll_wait()` when event-driven polling is enabled.
+
+<Warning>
+Not supported on FreeBSD or with qatlib RPM.
+</Warning>
+
+### SET_MAX_RETRY_COUNT
+
+<ParamField path="Param 3" type="int">
+  Number of retries (default: 5, max: 100,000, -1: infinite)
+</ParamField>
+
+<ParamField path="Param 4" type="void*" default="NULL">
+  Not used
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  Any time after engine creation
+</ParamField>
+
+Sets how many times the engine should retry a synchronous operation before flagging a failure.
+
+**Example:**
+```c
+// Set to infinite retries
+ENGINE_ctrl_cmd(e, "SET_MAX_RETRY_COUNT", -1, NULL, NULL, 0);
+```
+
+## Instance and Thread Management
+
+### GET_NUM_CRYPTO_INSTANCES
+
+<ParamField path="Param 3" type="long" default="0">
+  Not used
+</ParamField>
+
+<ParamField path="Param 4" type="int*" required>
+  Pointer to int that receives the instance count
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  After engine initialization
+</ParamField>
+
+Retrieves the total number of crypto instances available as specified in the QAT driver config file.
+
+**Example:**
+```c
+int num_instances;
+ENGINE_ctrl_cmd(e, "GET_NUM_CRYPTO_INSTANCES", 0, &num_instances, NULL, 0);
+```
+
+### GET_EXTERNAL_POLLING_FD
+
+<ParamField path="Param 3" type="int">
+  Instance number to retrieve fd for
+</ParamField>
+
+<ParamField path="Param 4" type="int*" required>
+  Pointer to int that receives the file descriptor
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  After engine initialization
+</ParamField>
+
+Retrieves the file descriptor for event notification in event-driven polling mode.
+
+<Warning>
+Not supported on FreeBSD or with qatlib RPM.
+</Warning>
+
+**Example:**
+```c
+int num_instances, fd;
+ENGINE_ctrl_cmd(e, "GET_NUM_CRYPTO_INSTANCES", 0, &num_instances, NULL, 0);
+
+for (int i = 0; i < num_instances; i++) {
+    ENGINE_ctrl_cmd(e, "GET_EXTERNAL_POLLING_FD", i, &fd, NULL, 0);
+    // Use fd for epoll/select
+}
+```
+
+### SET_INSTANCE_FOR_THREAD
+
+<ParamField path="Param 3" type="long">
+  Instance number to bind to
+</ParamField>
+
+<ParamField path="Param 4" type="void*" default="NULL">
+  Not used
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  After engine creation (automatically triggers initialization)
+</ParamField>
+
+Binds the current thread to a specific crypto instance.
+
+**Example:**
+```c
+ENGINE_ctrl_cmd(e, "SET_INSTANCE_FOR_THREAD", 2, NULL, NULL, 0);
+```
+
+## Monitoring and Statistics
+
+### GET_NUM_REQUESTS_IN_FLIGHT
+
+<ParamField path="Param 3" type="int">
+  Request type: 1 (asym), 2 (KDF), 3 (cipher)
+</ParamField>
+
+<ParamField path="Param 4" type="int**" required>
+  Pointer to int pointer that receives the address of the counter
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  Any time after engine initialization
+</ParamField>
+
+Retrieves the address of the counter for in-flight requests of a specific type. Requires heuristic polling to be enabled.
+
+**Request Types:**
+- `1`: Asymmetric key operations
+- `2`: KDF operations (PRF and HKDF)
+- `3`: Cipher operations (or pipelines when pipelining is used)
+
+**Example:**
+```c
+int *asym_requests_ptr;
+ENGINE_ctrl_cmd(e, "GET_NUM_REQUESTS_IN_FLIGHT", 1, &asym_requests_ptr, NULL, 0);
+// Read directly: int count = *asym_requests_ptr;
+```
+
+### GET_NUM_OP_RETRIES
+
+<ParamField path="Param 3" type="long" default="0">
+  Not used
+</ParamField>
+
+<ParamField path="Param 4" type="unsigned int*" required>
+  Pointer to unsigned int that receives the retry count
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  Any time after engine initialization
+</ParamField>
+
+Retrieves the total number of retry operations that have occurred.
+
+**Example:**
+```c
+unsigned int retries;
+ENGINE_ctrl_cmd(e, "GET_NUM_OP_RETRIES", 0, &retries, NULL, 0);
+```
+
+## Engine Initialization and Lifecycle
+
+### INIT_ENGINE
+
+<ParamField path="Param 3" type="long" default="0">
+  Not used
+</ParamField>
+
+<ParamField path="Param 4" type="void*" default="NULL">
+  Not used
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  After engine creation
+</ParamField>
+
+Manually initializes the engine. Normally not necessary as the engine initializes automatically via `ENGINE_init()` or after fork.
+
+<Info>
+Useful for performance optimization when engine is compiled with `--disable-qat_auto_engine_init_on_fork`.
+</Info>
+
+### SET_CONFIGURATION_SECTION_NAME
+
+<ParamField path="Param 3" type="long" default="0">
+  Not used
+</ParamField>
+
+<ParamField path="Param 4" type="char*" required>
+  NULL-terminated section name (max 64 bytes including NULL)
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  After engine creation, before initialization
+</ParamField>
+
+Configures the engine to use a custom section name in the QAT driver config file instead of the default `[SHIM]`.
+
+**Example:**
+```c
+ENGINE_ctrl_cmd(e, "SET_CONFIGURATION_SECTION_NAME", 0, "MY_SECTION", NULL, 0);
+```
+
+## Fallback and Offload Control
+
+### ENABLE_SW_FALLBACK
+
+<ParamField path="Param 3" type="long" default="0">
+  Not used
+</ParamField>
+
+<ParamField path="Param 4" type="void*" default="NULL">
+  Not used
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  After engine creation, before initialization
+</ParamField>
+
+Enables automatic fallback to software (on-core) crypto operations if acceleration devices go offline.
+
+<Warning>
+Not supported on FreeBSD or with qatlib RPM.
+</Warning>
+
+### HEARTBEAT_POLL
+
+<ParamField path="Param 3" type="long" default="0">
+  Not used
+</ParamField>
+
+<ParamField path="Param 4" type="int*" required>
+  Pointer to int that receives success/failure status
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  Any time after engine initialization
+</ParamField>
+
+Checks if acceleration devices are still functioning. Used with software fallback and external polling.
+
+<Info>
+Recommended polling interval: 0.5 to 1 second for timely detection of device status changes.
+</Info>
+
+**Example:**
+```c
+int status;
+ENGINE_ctrl_cmd(e, "HEARTBEAT_POLL", 0, &status, NULL, 0);
+if (!status) {
+    // Devices are offline
+}
+```
+
+### DISABLE_QAT_OFFLOAD
+
+<ParamField path="Param 3" type="long" default="0">
+  Not used
+</ParamField>
+
+<ParamField path="Param 4" type="void*" default="NULL">
+  Not used
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  Any time after engine initialization
+</ParamField>
+
+Disables hardware acceleration immediately, performing all operations on-core instead.
+
+**Example:**
+```c
+ENGINE_ctrl_cmd(e, "DISABLE_QAT_OFFLOAD", 0, NULL, NULL, 0);
+```
+
+## Algorithm Control
+
+### SET_CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD
+
+<ParamField path="Param 3" type="long" default="0">
+  Not used
+</ParamField>
+
+<ParamField path="Param 4" type="char*" required>
+  NULL-terminated configuration string (max 1024 bytes)
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  Any time after engine creation
+</ParamField>
+
+Sets the packet size threshold for hardware acceleration. Packets below this size are processed on-core for better performance.
+
+**Supported Algorithms:**
+- `AES-128-CBC-HMAC-SHA1`
+- `AES-256-CBC-HMAC-SHA1`
+- `AES-128-CBC-HMAC-SHA256`
+- `AES-256-CBC-HMAC-SHA256`
+
+**Format:**
+```
+ALGORITHM:THRESHOLD[,ALGORITHM:THRESHOLD...]
+```
+
+**Example:**
+```c
+char *config = "AES-128-CBC-HMAC-SHA1:4096,AES-256-CBC-HMAC-SHA1:8192";
+ENGINE_ctrl_cmd(e, "SET_CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD", 0, config, NULL, 0);
+```
+
+**Threshold Values:**
+- Default: 2048 bytes
+- Minimum: 0 bytes
+- Maximum: 16,384 bytes
+
+<Note>
+The threshold includes the entire TLS record: header (5B), IV (16B), payload, HMAC (20/32B), padding (0-255B), and padding length (1B).
+</Note>
+
+<Warning>
+Not supported when compiled with `--enable-qat_small_pkt_offload`.
+</Warning>
+
+### HW_ALGO_BITMAP
+
+<ParamField path="Param 3" type="long" default="0">
+  Not used
+</ParamField>
+
+<ParamField path="Param 4" type="unsigned long*" required>
+  Pointer to hex value bitmap
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  Any time after engine initialization
+</ParamField>
+
+Sets the QAT hardware algorithm bitmap and reloads algorithm methods.
+
+**Example:**
+```c
+unsigned long bitmap = 0x82EF;
+ENGINE_ctrl_cmd(e, "HW_ALGO_BITMAP", 0, &bitmap, NULL, 0);
+```
+
+<Info>
+Default bitmap is `0xFFFF` (all algorithms enabled). Only the first 16 bits are used.
+</Info>
+
+### SW_ALGO_BITMAP
+
+<ParamField path="Param 3" type="long" default="0">
+  Not used
+</ParamField>
+
+<ParamField path="Param 4" type="unsigned long*" required>
+  Pointer to hex value bitmap
+</ParamField>
+
+<ParamField path="When to send" type="string">
+  Any time after engine initialization
+</ParamField>
+
+Sets the QAT software algorithm bitmap and reloads algorithm methods.
+
+**Example:**
+```c
+unsigned long bitmap = 0x82EF;
+ENGINE_ctrl_cmd(e, "SW_ALGO_BITMAP", 0, &bitmap, NULL, 0);
+```
+
+## Quick Reference Table
+
+| Message | Timing | Param 3 | Param 4 | Purpose |
+|---------|--------|---------|---------|----------|
+| `ENABLE_EXTERNAL_POLLING` | Before init | 0 | NULL | Enable external polling mode |
+| `POLL` | After init | 0 | int* | Poll all instances |
+| `ENABLE_EVENT_DRIVEN_POLLING_MODE` | Before init | 0 | NULL | Enable event-driven polling |
+| `DISABLE_EVENT_DRIVEN_POLLING_MODE` | Before init | 0 | NULL | Disable event-driven polling |
+| `ENABLE_INLINE_POLLING` | Before init | 0 | NULL | Enable inline polling |
+| `ENABLE_HEURISTIC_POLLING` | Before init | 0 | NULL | Enable heuristic polling |
+| `SET_INTERNAL_POLL_INTERVAL` | Anytime | nanoseconds | NULL | Set poll interval |
+| `SET_EPOLL_TIMEOUT` | Anytime | milliseconds | NULL | Set epoll timeout |
+| `SET_MAX_RETRY_COUNT` | Anytime | count | NULL | Set retry limit |
+| `GET_NUM_CRYPTO_INSTANCES` | After init | 0 | int* | Get instance count |
+| `GET_EXTERNAL_POLLING_FD` | After init | instance | int* | Get polling fd |
+| `SET_INSTANCE_FOR_THREAD` | After creation | instance | NULL | Bind thread to instance |
+| `GET_NUM_REQUESTS_IN_FLIGHT` | After init | type | int** | Get in-flight counter address |
+| `GET_NUM_OP_RETRIES` | After init | 0 | unsigned int* | Get retry count |
+| `INIT_ENGINE` | After creation | 0 | NULL | Manually initialize |
+| `SET_CONFIGURATION_SECTION_NAME` | Before init | 0 | char* | Set config section |
+| `ENABLE_SW_FALLBACK` | Before init | 0 | NULL | Enable software fallback |
+| `HEARTBEAT_POLL` | After init | 0 | int* | Check device status |
+| `DISABLE_QAT_OFFLOAD` | After init | 0 | NULL | Disable HW acceleration |
+| `SET_CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD` | Anytime | 0 | char* | Set size thresholds |
+| `HW_ALGO_BITMAP` | After init | 0 | unsigned long* | Set HW algorithm bitmap |
+| `SW_ALGO_BITMAP` | After init | 0 | unsigned long* | Set SW algorithm bitmap |
+
+## Additional Resources
+
+- [OpenSSL Configuration](/configuration/openssl-config)
+- [Driver Configuration](/configuration/driver-config)

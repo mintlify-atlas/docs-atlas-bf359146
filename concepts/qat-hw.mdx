@@ -1,0 +1,139 @@
+---
+title: 'QAT Hardware Acceleration'
+description: 'Learn about Intel QAT hardware-based cryptographic acceleration'
+---
+
+## What is QAT Hardware Acceleration?
+
+Intel® QuickAssist Technology (QAT) Hardware acceleration provides offloading of cryptographic operations to dedicated hardware accelerators on Intel platforms. The QAT OpenSSL* Engine leverages these hardware accelerators to significantly improve the performance of cryptographic operations while reducing CPU overhead.
+
+<Note>
+QAT Hardware acceleration requires compatible Intel QAT-enabled devices or platforms with the appropriate driver installed (Linux Hardware v1.7, v1.8, v2.0 or FreeBSD Hardware v2.0).
+</Note>
+
+## Supported Devices
+
+QAT Hardware acceleration is available on the following Intel platforms:
+
+- Intel® Xeon® with Intel® C62X Series Chipset
+- Intel® Xeon® Scalable Processor family with Intel® QAT Gen4/Gen4m (4th Gen Xeon and later)
+
+## Supported Algorithms
+
+QAT Hardware provides acceleration for a comprehensive set of cryptographic algorithms:
+
+### Asymmetric PKE (Public Key Encryption)
+
+- **RSA**: Key sizes 512/1024/2048/4096/8192 bits
+- **DH**: Key sizes 768/1024/1536/2048/3072/4096/8192 bits
+- **DSA**: Key sizes 160/1024, 224/2048, 256/2048, 256/3072
+- **ECDH**: NIST Prime Curves (P-192/P-224/P-256/P-384/P-521), Binary Curves (B-163/B-233/B-283/B-409/B-571), Koblitz Curves (K-163/K-233/K-283/K-409/K-571), Montgomery Curves (X25519/X448)
+- **ECDSA**: NIST Prime Curves (P-192/P-224/P-256/P-384/P-521), Binary Curves, Koblitz Curves
+- **SM2**: Chinese national cryptographic standard
+
+### Symmetric Ciphers
+
+- **AES-CBC-HMAC-SHA**: AES128/256-CBC-HMAC-SHA1, AES128/256-CBC-HMAC-SHA256
+- **AES-CCM**: AES128-CCM, AES192-CCM, AES256-CCM
+- **AES-GCM**: AES128-GCM, AES256-GCM
+- **ChaCha20-Poly1305**: Modern authenticated encryption
+- **SM4-CBC**: Chinese national symmetric cipher
+
+### Key Derivation Functions
+
+- **PRF**: Pseudo-Random Function
+- **HKDF**: HMAC-based Key Derivation Function (available from Version 4.8 onwards)
+
+### Hashing Algorithms
+
+- **SHA3**: SHA3-224/256/384/512
+- **SM3**: Chinese national hash algorithm
+
+<Info>
+HKDF support is disabled by default as it's an experimental feature. Enable it using the `--enable-qat_hw_hkdf` flag during configuration and modify the driver's 'ServicesProfile' from 'DEFAULT' to 'CRYPTO'.
+</Info>
+
+## How QAT Hardware Works
+
+### Driver and Instance Management
+
+The QAT Hardware acceleration relies on the Intel® QuickAssist Technology Driver, which manages:
+
+1. **Hardware Device Access**: The driver provides access to QAT acceleration devices installed in the system
+2. **Instance Management**: Crypto instances are created to handle requests. Each instance can process requests independently
+3. **Request Queuing**: Cryptographic requests are queued and submitted to available hardware instances
+
+### Memory Management
+
+QAT Hardware uses specialized memory management for optimal performance:
+
+- Dedicated DMA-capable memory pools for data transfer between the CPU and QAT devices
+- Efficient buffer management to minimize memory copying overhead
+- Request batching to maximize hardware utilization
+
+### Operation Modes
+
+QAT Hardware supports both synchronous and asynchronous operations:
+
+- **Synchronous Mode**: Operations complete before returning to the application
+- **Asynchronous Mode**: Operations return immediately, with completion notifications via callbacks or file descriptors
+
+<Note>
+Asynchronous mode is recommended for maximum performance, especially in high-throughput scenarios with multiple concurrent connections.
+</Note>
+
+### Pipelining Support
+
+The engine supports OpenSSL* pipelining for chained cipher encryption operations:
+
+- Maximum of 32 pipelines (buffer chunks)
+- Maximum size of 16,384 bytes per pipeline
+- Pipelined operations always use hardware acceleration, bypassing small packet thresholds
+
+## Software Fallback Feature
+
+The QAT OpenSSL* Engine includes a software fallback mechanism for high availability:
+
+### Heartbeat Monitoring
+
+The Intel® QuickAssist Heartbeat feature detects unresponsive acceleration devices and manages device resets:
+
+- Monitors device health continuously
+- Suspends QAT instances during device reset events
+- Enables automatic recovery when devices come back online
+
+### Fallback Behavior
+
+When hardware acceleration becomes unavailable:
+
+1. **In-flight requests**: Requests already submitted to a failing device are completed using CPU-based software implementations
+2. **New requests**: Routed to other available QAT devices, or executed on CPU if no devices are available
+3. **Recovery**: Automatic return to hardware acceleration when devices are restored
+
+<Info>
+To enable software fallback, set `AutomaticResetOnError = 1` in the `[GENERAL]` section of the device configuration file `/etc/<device>.conf`.
+</Info>
+
+### Supported Algorithms for Fallback
+
+Software fallback is supported for:
+
+- Asymmetric PKE algorithms
+- Key Derivation algorithms
+- Symmetric algorithms: AES-GCM, AES-CCM, ChaCha-Poly1305, AES-CBC chained ciphers (symmetric fallback only on FreeBSD)
+
+<Note>
+Hash and SMx algorithms do not support software fallback.
+</Note>
+
+## Configuration Requirements
+
+For optimal QAT Hardware performance:
+
+1. Install and configure the Intel® QAT Driver (v1.7, v1.8, v2.0)
+2. Configure device settings in `/etc/<device>.conf`
+3. Set appropriate instance and memory limits based on workload
+4. Enable heartbeat monitoring for production deployments
+5. Configure service profiles based on required features (e.g., 'CRYPTO' for HKDF)
+
+For detailed installation and configuration instructions, refer to the Intel QAT Software Programmer's Guides for your hardware version.

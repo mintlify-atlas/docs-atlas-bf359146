@@ -1,0 +1,237 @@
+---
+title: 'QAT_HW and QAT_SW Coexistence'
+description: 'Configure both hardware and software acceleration together for optimal performance'
+---
+
+## Running QAT_HW and QAT_SW Together
+
+The Intel® QAT OpenSSL* Engine supports simultaneous use of both QAT Hardware (QAT_HW) and QAT Software (QAT_SW) acceleration in a single deployment. This coexistence mode enables optimal performance by intelligently routing algorithms to the most suitable acceleration method.
+
+### Build Configuration
+
+To enable coexistence, include both flags during configuration:
+
+```bash
+./configure --with-qat_hw_dir=/path/to/QAT_Driver --enable-qat_sw
+make
+make install
+```
+
+When both acceleration methods are configured, the engine automatically routes cryptographic operations based on performance characteristics and availability.
+
+## Default Behavior
+
+The coexistence mode uses intelligent defaults based on platform capabilities:
+
+### With QAT Hardware Available
+
+- **Asymmetric algorithms**: Routed to QAT Hardware
+- **Symmetric chained ciphers**: Routed to QAT Hardware  
+- **Symmetric GCM ciphers**: Routed to QAT Software
+
+### Without QAT Hardware
+
+- Falls back to QAT_SW for supported asymmetric algorithms
+- Software acceleration used where available
+- OpenSSL software implementation for unsupported operations
+
+### Custom Algorithm Routing
+
+You can override defaults using specific algorithm enable flags:
+
+```bash
+./configure --with-qat_hw_dir=/path/to/QAT_Driver --enable-qat_sw \
+  --enable-qat_sw_rsa --enable-qat_hw_gcm
+```
+
+This configuration would route RSA to QAT_SW and AES-GCM to QAT_HW, overriding the defaults.
+
+## Algorithm Routing and Fallback
+
+For optimal performance, certain algorithms use both QAT_HW and QAT_SW with intelligent fallback:
+
+### Primary QAT_SW Algorithms
+
+These algorithms perform better with software acceleration and use QAT_SW exclusively:
+
+- **AES-GCM**: All key sizes and packet sizes
+- **ECDSA-P256**: NIST P-256 curve operations
+- **SM4-CBC**: For packet sizes 256-1024 bytes
+
+### Hybrid HW-to-SW Fallback
+
+These algorithms prefer QAT_HW but fall back to QAT_SW when hardware capacity is reached:
+
+- **RSA**: 2K/3K/4K key sizes
+- **ECDSA-P384**: NIST P-384 curve operations
+- **ECDH**: P-256/P-384/X25519 curves
+- **SM4-CBC**: For packet sizes 2048-16384 bytes
+
+### Fallback Control Flow
+
+```
+Request → QAT_HW Available? → YES → Submit to QAT_HW
+                            ↓
+                           NO/BUSY → QAT_SW Available? → YES → Submit to QAT_SW
+                                                         ↓
+                                                        NO → OpenSSL Software
+```
+
+When QAT_HW reaches capacity (returns RETRY status), requests automatically overflow to QAT_SW, ensuring continuous operation without performance degradation.
+
+## Configuration Considerations
+
+### LimitDevAccess Setting
+
+For optimal coexistence performance, configure the QAT driver appropriately:
+
+```ini
+# In /etc/<device>.conf
+[GENERAL]
+LimitDevAccess = 0
+```
+
+Setting `LimitDevAccess = 0` allows each process to utilize all available QAT devices, ensuring:
+
+- Maximum QAT_HW utilization before fallback
+- Better load distribution across devices
+- Improved overall throughput in coexistence mode
+
+### CyNumConcurrentSymRequests
+
+For SM4-CBC operations in coexistence mode:
+
+```ini
+# In /etc/<device>.conf  
+[GENERAL]
+CyNumConcurrentSymRequests = 64
+```
+
+A smaller value triggers QAT_HW RETRY sooner, enabling faster fallback to QAT_SW when needed.
+
+### Async Jobs Configuration
+
+The number of async jobs significantly impacts coexistence performance. Recommended settings for SM4-CBC with 1 QAT device:
+
+| Packet Length | 1 Multi | 2 Multi | 4 Multi | 8-64 Multi |
+|---------------|---------|---------|---------|------------|
+| 16 bytes      | 64      | 64      | 64      | 64         |
+| 64 bytes      | 64      | 64      | 64      | 64         |
+| 256 bytes     | 96      | 96      | 96      | 96         |
+| 1024 bytes    | 96      | 96      | 96      | 96         |
+| 8192 bytes    | 48      | 88      | 136     | 176        |
+| 16384 bytes   | 48      | 88      | 152     | 176        |
+
+Adjust `async_jobs` parameter based on your specific workload and packet sizes.
+
+## Runtime Configuration with Bitmaps
+
+The engine provides runtime control over algorithm routing using bitmap commands.
+
+### Algorithm Bitmaps
+
+Each algorithm is assigned a bitmap value:
+
+| Algorithm        | Bitmap  | HW/SW Support     | Default Priority |
+|------------------|---------|-------------------|------------------|
+| RSA              | 0x00001 | Both              | HW > SW          |
+| DSA              | 0x00002 | HW only           | HW               |
+| DH               | 0x00004 | HW only           | HW               |
+| ECDSA            | 0x00008 | Both              | SW > HW (P256), HW > SW (others) |
+| ECDH             | 0x00010 | Both              | HW > SW          |
+| ECX25519         | 0x00020 | Both              | HW > SW          |
+| ECX448           | 0x00040 | HW only           | HW               |
+| PRF              | 0x00080 | HW only           | HW               |
+| HKDF             | 0x00100 | HW only           | HW               |
+| SM2              | 0x00200 | Both              | HW > SW          |
+| AES_GCM          | 0x00400 | Both              | SW > HW          |
+| AES_CBC_HMAC_SHA | 0x00800 | HW only           | HW               |
+| SM4_CBC          | 0x01000 | Both              | HW > SW          |
+| CHACHA_POLY      | 0x02000 | HW only           | HW               |
+| SHA3             | 0x04000 | HW only           | HW               |
+| SM3              | 0x08000 | SW only           | SW               |
+| SM4-GCM          | 0x10000 | SW only           | SW               |
+| SM4-CCM          | 0x20000 | SW only           | SW               |
+| AES-CCM          | 0x40000 | HW only           | HW               |
+
+### Using HW_ALGO_BITMAP and SW_ALGO_BITMAP
+
+#### Example 1: Selective Algorithm Enablement
+
+Enable specific algorithms on preferred acceleration:
+- RSA (HW), ECDSA (HW), ECDH (SW), ECX25519 (HW), SM2 (SW), AES-GCM (SW)
+
+```
+HW_ALGO_BITMAP = RSA(0x0001) + ECDSA(0x0008) + ECX25519(0x0020) = 0x0029
+SW_ALGO_BITMAP = ECDH(0x0010) + SM2(0x0200) + AES-GCM(0x0400) = 0x0610
+```
+
+**OpenSSL configuration file:**
+
+```ini
+[qatengine_section]
+engine_id = qatengine
+default_algorithms = ALL
+HW_ALGO_BITMAP = 0x0029
+SW_ALGO_BITMAP = 0x0610
+```
+
+**Test application:**
+
+```bash
+./testapp -engine qatengine -async_jobs 1 -c 1 -n 1 -nc 1 -v \
+  -hw_algo 0x0029 -sw_algo 0x0610 [test_case]
+```
+
+#### Example 2: Lower Priority Override
+
+Enable lower priority acceleration by disabling higher priority:
+- RSA (SW instead of default HW)
+- AES-GCM (HW instead of default SW)
+
+```
+HW_ALGO_BITMAP = 0xFFFF - RSA(0x0001) = 0xFFFE  # Disable RSA HW
+SW_ALGO_BITMAP = 0xFFFF - AES-GCM(0x0400) = 0xFBFF  # Disable AES-GCM SW
+```
+
+This allows RSA to fall through to SW and AES-GCM to fall through to HW.
+
+### Bitmap Configuration Rules
+
+1. **Default is 0xFFFF**: All algorithms enabled on both HW and SW by default
+2. **Requires build support**: Algorithms must be enabled during configuration
+3. **Requires default_algorithms**: Must set appropriate algorithm groups (RSA/EC/CIPHER/ALL)
+4. **Both bitmaps recommended**: Set both HW_ALGO_BITMAP and SW_ALGO_BITMAP in coexistence mode
+5. **Disable higher priority**: To use lower priority acceleration, disable the higher priority option
+
+<Note>
+Bitmap commands only work when the corresponding offload mode (HW or SW) is enabled at build time.
+</Note>
+
+## Performance Optimization
+
+For optimal coexistence performance:
+
+1. **Use default routing**: The engine's defaults are tuned for best performance
+2. **Enable all devices**: Set `LimitDevAccess = 0` to use all available QAT hardware
+3. **Tune async_jobs**: Match async job count to your workload and packet sizes
+4. **Monitor utilization**: Track both HW and SW acceleration usage in production
+5. **Test your workload**: Performance characteristics vary by algorithm, packet size, and concurrency
+
+## Troubleshooting
+
+### Algorithm Not Accelerating
+
+Check that:
+- Algorithm is enabled in build configuration (`--enable-qat_sw_rsa`, etc.)
+- Algorithm is included in `default_algorithms` directive
+- Bitmap settings haven't disabled the algorithm
+- Platform supports required instruction sets (for QAT_SW)
+
+### Unexpected Fallback
+
+If operations fall back unexpectedly:
+- Verify QAT driver is running and devices are available
+- Check `LimitDevAccess` setting in driver configuration
+- Review QAT hardware capacity and concurrent request limits
+- Monitor for device errors or heartbeat failures

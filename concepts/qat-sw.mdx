@@ -1,0 +1,156 @@
+---
+title: 'QAT Software Acceleration'
+description: 'Learn about Intel QAT software-based cryptographic acceleration using vectorized instructions'
+---
+
+## What is QAT Software Acceleration?
+
+Intel® QAT Software acceleration provides CPU-based cryptographic optimization using Intel® Advanced Vector Extensions (AVX-512) and specialized instruction sets. Unlike hardware acceleration, QAT_SW leverages vectorized CPU instructions to perform multiple cryptographic operations in parallel without requiring dedicated QAT hardware devices.
+
+This approach is ideal for platforms that support modern Intel processors with AVX-512 capabilities but may not have dedicated QAT hardware accelerators installed.
+
+## Crypto Multi-buffer Library
+
+QAT Software acceleration utilizes the Intel® Crypto Multi-buffer library, which implements:
+
+### Multi-buffer Processing
+
+The Multi-buffer approach batches multiple cryptographic requests together and processes them in parallel using AVX-512 IFMA (Integer Fused Multiply Add) operations:
+
+1. **Request Batching**: Multiple requests are maintained in queues
+2. **Parallel Processing**: Up to 8 requests are processed simultaneously using vectorized instructions
+3. **Asynchronous Completion**: Uses OpenSSL's asynchronous infrastructure for non-blocking operations
+
+### Supported Asymmetric Algorithms
+
+The Crypto Multi-buffer library accelerates the following asymmetric PKE algorithms:
+
+- **RSA**: Key sizes 2048, 3072, 4096 bits
+- **ECDH**: X25519 (Montgomery Curve), P-256, P-384 (NIST Prime Curves), SM2
+- **ECDSA**: P-256, P-384 (NIST Prime Curves), SM2
+- **SM2**: Chinese national public key cryptography standard
+
+<Note>
+Multi-buffer acceleration is most beneficial in asynchronous mode with many parallel connections to fully utilize the batching mechanism.
+</Note>
+
+## IPSec_MB Library
+
+For symmetric encryption, QAT Software uses the Intel® Multi-Buffer Crypto for IPsec Library (IPSec_MB):
+
+### Synchronous Mechanism
+
+Unlike asymmetric operations, symmetric AES-GCM processing follows a synchronous mechanism:
+
+- Requests are submitted directly to the IPSec_MB library
+- Processing occurs in multiple blocks using vectorized instructions
+- No batching or queueing of requests
+
+### Vectorized AES Processing
+
+The IPSec_MB library leverages:
+
+- **VAES**: Vector AES instruction set extension
+- **AVX2/AVX512**: Advanced vector extensions for parallel data processing
+- **VPCLMULQDQ**: Vector carry-less multiplication for GCM mode
+
+### Supported Symmetric Algorithms
+
+- **AES-GCM**: AES128-GCM, AES192-GCM, AES256-GCM
+- **SM4-CBC**: 16 Multibuffer requests (Tongsuo only)
+- **SM4-GCM**: 16 Multibuffer requests (Tongsuo only)
+- **SM4-CCM**: 16 Multibuffer requests (Tongsuo only)
+
+### Supported Hash Algorithms
+
+- **SM3**: Hash using 16 Multibuffer requests (Experimental)
+
+## Platform Requirements
+
+QAT Software acceleration requires an Intel processor with specific instruction set extensions:
+
+### Minimum Processor Generation
+
+**3rd Generation Intel® Xeon® Scalable Processors** or newer with the following instruction sets:
+
+```
+AVX512F        - AVX-512 Foundation
+AVX512_IFMA    - AVX-512 Integer Fused Multiply Add
+VAES           - Vector AES
+VPCLMULQDQ     - Vector Carry-Less Multiplication
+AVX2           - Advanced Vector Extensions 2
+```
+
+### Checking Processor Support
+
+You can verify your processor supports the required instructions:
+
+```bash
+grep -E 'avx512f|avx512ifma|vaes|vpclmulqdq|avx2' /proc/cpuinfo
+```
+
+All five instruction sets must be present for QAT Software acceleration to function properly.
+
+## How to Enable QAT_SW
+
+To build the QAT OpenSSL* Engine with QAT Software support:
+
+```bash
+./configure --enable-qat_sw
+make
+make install
+```
+
+For specific algorithm enablement, use the corresponding flags:
+
+```bash
+./configure --enable-qat_sw --enable-qat_sw_rsa --enable-qat_sw_gcm
+```
+
+## Performance Characteristics
+
+### When to Use QAT_SW
+
+QAT Software acceleration is beneficial when:
+
+1. **High Parallelism**: Applications with many concurrent connections or asynchronous operations
+2. **No QAT Hardware**: Systems without dedicated QAT accelerator cards
+3. **Specific Algorithms**: AES-GCM operations often perform better with QAT_SW than QAT_HW
+4. **Modern Processors**: 3rd Gen Xeon or newer with full AVX-512 support
+
+### Optimal Use Cases
+
+- **TLS/SSL Servers**: High-throughput web servers with many simultaneous connections
+- **VPN Gateways**: IPsec workloads with AES-GCM encryption
+- **Cloud Environments**: Virtual machines on modern Intel processors
+- **Microservices**: Applications with asynchronous I/O patterns
+
+<Note>
+For best performance, use asynchronous mode (`async_jobs` parameter) to enable request batching and maximize vectorization efficiency.
+</Note>
+
+## Limitations and Considerations
+
+### Asynchronous Mode Requirement
+
+Multi-buffer asymmetric acceleration requires asynchronous operation:
+
+- Synchronous mode will not benefit from batching
+- Configure adequate `async_jobs` for your workload
+- More parallel connections improve batching efficiency
+
+### CPU Utilization
+
+Unlike hardware acceleration, QAT_SW consumes CPU resources:
+
+- Trade-off between CPU usage and cryptographic performance
+- Monitor CPU utilization in production deployments
+- Consider hardware acceleration if CPU resources are constrained
+
+### Platform Dependency
+
+QAT Software acceleration is limited to Intel processors with the required instruction sets:
+
+- Will not function on older Intel processors (pre-3rd Gen Xeon)
+- Not available on non-Intel platforms
+- Verify instruction set support before deployment

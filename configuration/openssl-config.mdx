@@ -1,0 +1,223 @@
+---
+title: 'OpenSSL Configuration'
+description: 'Configure OpenSSL to automatically load and initialize the QAT Engine'
+---
+
+## Overview
+
+OpenSSL supports loading and initializing engines via the `openssl.cnf` configuration file. This allows you to configure the QAT Engine to load automatically without requiring code changes or command-line options.
+
+## Setting the OPENSSL_ENGINES Environment Variable
+
+The `OPENSSL_ENGINES` environment variable tells OpenSSL where to find engine shared libraries. Set this to the directory containing `qatengine.so`:
+
+```bash
+export OPENSSL_ENGINES=/usr/local/ssl/lib64/engines-3
+```
+
+This path may vary depending on your OpenSSL installation directory and architecture.
+
+## Loading the Configuration File
+
+By default, OpenSSL does not load the `openssl.cnf` file at initialization. You must explicitly load it in your application.
+
+### Modern Method (OpenSSL 1.1.0+)
+
+Call this as the first OpenSSL library function in your application:
+
+```c
+OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, NULL);
+```
+
+The second parameter controls which configuration section to use:
+- `NULL`: Uses the default `openssl_conf` section
+- Custom: Pass an `OPENSSL_INIT_SETTINGS` structure with the `appname` field set to your section name
+
+For more details, see the [OpenSSL documentation](https://www.openssl.org/docs/man1.1.1/man3/OPENSSL_init_crypto.html).
+
+### Legacy Method (Deprecated)
+
+Older applications may use:
+
+```c
+OPENSSL_config(NULL);
+```
+
+<Warning>
+This method is deprecated and should not be relied upon for future use. Migrate to `OPENSSL_init_crypto()` instead.
+</Warning>
+
+## Configuration File Setup
+
+The `openssl.cnf` file is typically located in the `ssl` subdirectory of your OpenSSL installation path.
+
+### Step 1: Add Global Section Entry
+
+Add this line in the global section (before the first bracketed section header):
+
+```ini
+openssl_conf = openssl_init
+```
+
+The string `openssl_init` is the name of the section containing application-specific settings. You can use a different name if preferred.
+
+### Step 2: Create the Initialization Section
+
+Add the initialization section (can be placed as the first bracketed section or further down):
+
+```ini
+[ openssl_init ]
+engines = engine_section
+```
+
+The `engines` keyword tells OpenSSL to load engines from the specified section.
+
+### Step 3: Define Engine List
+
+Create the engine list section:
+
+```ini
+[ engine_section ]
+qat = qat_section
+```
+
+### Step 4: Configure the QAT Engine
+
+Create the QAT-specific configuration section:
+
+```ini
+[ qat_section ]
+engine_id = qatengine
+dynamic_path = /usr/local/ssl/lib/engines-3/qatengine.so
+default_algorithms = ALL
+```
+
+**Configuration Parameters:**
+
+- `engine_id`: The engine name (must be `qatengine`)
+- `dynamic_path`: Full path to the engine shared library (optional if installed in the standard OpenSSL engines directory)
+- `default_algorithms`: Which algorithms to use by default (`ALL` enables all engine-provided algorithms)
+
+<Note>
+You do not need to specify `dynamic_path` if the engine is installed in OpenSSL's standard engines directory.
+</Note>
+
+## Engine-Specific Messages
+
+You can configure engine behavior using engine-specific messages in the configuration file. These messages must be specified **before** the `default_algorithms` setting.
+
+### Supported Configuration Messages
+
+The following engine control messages can be set in the configuration file:
+
+- `ENABLE_EVENT_DRIVEN_POLLING_MODE`
+- `ENABLE_EXTERNAL_POLLING`
+- `ENABLE_INLINE_POLLING`
+- `ENABLE_SW_FALLBACK`
+- `SET_INTERNAL_POLL_INTERVAL`
+- `SET_EPOLL_TIMEOUT`
+- `SET_MAX_RETRY_COUNT`
+
+For detailed information about each message, see [Engine Messages](/configuration/engine-messages).
+
+### Message Syntax
+
+Set the message to `EMPTY` if it takes no parameters:
+
+```ini
+ENABLE_EVENT_DRIVEN_MODE = EMPTY
+```
+
+Or provide the value that would be passed as the 4th parameter of the equivalent `ENGINE_ctrl_cmd()` call:
+
+```ini
+SET_INTERNAL_POLL_INTERVAL = 15000
+```
+
+This is functionally equivalent to:
+
+```c
+ENGINE_ctrl_cmd(e, "SET_INTERNAL_POLL_INTERVAL", 15000, NULL, NULL, 0);
+```
+
+<Warning>
+This configuration mechanism only supports simple values at engine initialization. You cannot pass complex structures, set the 3rd parameter, or handle return values.
+</Warning>
+
+## Complete Configuration Example
+
+Here's a complete working example with common settings:
+
+```ini
+# Global section
+openssl_conf = openssl_init
+
+# Initialization section
+[ openssl_init ]
+engines = engine_section
+
+# Engine list
+[ engine_section ]
+qat = qat_section
+
+# QAT Engine configuration
+[ qat_section ]
+engine_id = qatengine
+dynamic_path = /usr/local/ssl/lib/engines-3/qatengine.so
+
+# Engine-specific messages (before default_algorithms)
+ENABLE_EXTERNAL_POLLING = EMPTY
+SET_INTERNAL_POLL_INTERVAL = 10000
+SET_MAX_RETRY_COUNT = 5
+
+# Enable all algorithms
+default_algorithms = ALL
+```
+
+## Example with Event-Driven Polling
+
+```ini
+[ qat_section ]
+engine_id = qatengine
+ENABLE_EVENT_DRIVEN_POLLING_MODE = EMPTY
+SET_EPOLL_TIMEOUT = 1000
+default_algorithms = ALL
+```
+
+## Example with Software Fallback
+
+```ini
+[ qat_section ]
+engine_id = qatengine
+ENABLE_SW_FALLBACK = EMPTY
+ENABLE_EXTERNAL_POLLING = EMPTY
+default_algorithms = ALL
+```
+
+## Fork Behavior
+
+<Info>
+In forking applications, custom configuration values are inherited by child processes automatically.
+</Info>
+
+## Engine Initialization
+
+By default, the engine initializes automatically at the end of the configuration section after all engine-specific messages have been processed. This behavior can be controlled via the `init` setting (advanced usage, see OpenSSL documentation).
+
+## Using with OpenSSL Commands
+
+With the configuration file properly set up, you can use OpenSSL commands without specifying the engine explicitly:
+
+```bash
+# Without configuration file
+openssl speed -engine qatengine rsa2048
+
+# With configuration file loaded automatically
+openssl speed rsa2048
+```
+
+## Additional Resources
+
+- [OpenSSL Configuration File Documentation](https://www.openssl.org/docs/man3.0/man5/config.html)
+- [Engine Control Messages](/configuration/engine-messages)
+- [Driver Configuration](/configuration/driver-config)

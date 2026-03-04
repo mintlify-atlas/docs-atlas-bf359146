@@ -1,0 +1,827 @@
+---
+title: Build Configuration Options
+description: Complete reference of configure flags for building QAT Engine
+---
+
+## Overview
+
+This page provides a complete reference of all `./configure` flags available when building the Intel QAT OpenSSL Engine. Options are organized by category for easy navigation.
+
+<Note>
+All flags are used with the `./configure` command during the build process. For build instructions, see [Building from Source](/installation/from-source).
+</Note>
+
+## Required Options
+
+<AccordionGroup>
+  <Accordion title="--with-qat_hw_dir" icon="folder">
+    **Specify QAT Hardware driver source directory**
+    
+    ```bash
+    --with-qat_hw_dir=/path/to/qat_driver
+    ```
+    
+    Specifies the path to the Intel QAT Driver source code directory. Required for compilation to locate QAT header files.
+    
+    **Example:**
+    ```bash
+    ./configure --with-qat_hw_dir=/QAT
+    ```
+    
+    **When NOT required:**
+    - Building against in-tree driver via qatlib RPM
+    - Building for QAT_SW only
+  </Accordion>
+  
+  <Accordion title="--with-openssl_install_dir" icon="key">
+    **Specify OpenSSL installation directory**
+    
+    ```bash
+    --with-openssl_install_dir=/path/to/openssl_install
+    ```
+    
+    Specifies where OpenSSL was installed. The qatengine.so library will be copied to the engines directory during `make install`.
+    
+    **Example:**
+    ```bash
+    ./configure --with-openssl_install_dir=/usr/local/ssl
+    ```
+    
+    **When NOT required:**
+    - System already includes OpenSSL 3.x library and devel packages
+    - In this case, qatengine.so installs to system enginesdir (e.g., `/usr/lib64/engines-3`)
+  </Accordion>
+</AccordionGroup>
+
+## QAT Software Options
+
+<AccordionGroup>
+  <Accordion title="--enable-qat_sw / --disable-qat_sw" icon="code">
+    **Enable or disable QAT Software acceleration**
+    
+    ```bash
+    --enable-qat_sw
+    --disable-qat_sw
+    ```
+    
+    Enables QAT_SW acceleration using Intel Crypto Multi-buffer and Intel Multi-buffer crypto for IPsec libraries.
+    
+    **Default:** Disabled
+    
+    **Default library paths:**
+    - crypto_mb: `/usr/local/lib`
+    - ipsec_mb: `/usr/lib`
+    
+    **Custom paths:**
+    Use `--with-qat_sw_crypto_mb_install_dir` and `--with-qat_sw_ipsec_mb_install_dir` if libraries are elsewhere.
+  </Accordion>
+  
+  <Accordion title="--disable-qat_hw" icon="microchip">
+    **Disable QAT Hardware acceleration**
+    
+    ```bash
+    --disable-qat_hw
+    ```
+    
+    Forces use of QAT_SW acceleration when both QAT_HW and QAT_SW capabilities are available via in-tree driver.
+    
+    **Use case:**
+    - System has both QAT_HW and QAT_SW
+    - In-tree driver installed via qatlib RPM
+    - Prefer QAT_SW over QAT_HW
+    
+    <Note>
+    By default, QAT_HW takes precedence when both are available.
+    </Note>
+  </Accordion>
+  
+  <Accordion title="--with-qat_sw_crypto_mb_install_dir" icon="folder-open">
+    **Custom crypto_mb installation path**
+    
+    ```bash
+    --with-qat_sw_crypto_mb_install_dir=/custom/path
+    ```
+    
+    **Default:** `/usr/local`
+    
+    Specify if Intel Crypto Multi-buffer library is installed in a non-default location.
+  </Accordion>
+  
+  <Accordion title="--with-qat_sw_ipsec_mb_install_dir" icon="folder-open">
+    **Custom IPsec_MB installation path**
+    
+    ```bash
+    --with-qat_sw_ipsec_mb_install_dir=/custom/path
+    ```
+    
+    **Default:** `/usr`
+    
+    Specify if Intel Multi-buffer crypto for IPsec library is installed in a non-default location.
+  </Accordion>
+</AccordionGroup>
+
+## Advanced Options
+
+<AccordionGroup>
+  <Accordion title="--with-openssl_dir" icon="code-branch">
+    **OpenSSL source directory for error generation**
+    
+    ```bash
+    --with-openssl_dir=/path/to/openssl
+    ```
+    
+    Path to OpenSSL source code, only needed to regenerate engine-specific error files using mkerr.pl script.
+    
+    **When to use:**
+    - Adding new error messages to QAT Engine source
+    - Updates qat_err.c, qat_err.h, and qat.txt
+    
+    **Default behavior:** Uses existing error files from QAT Engine directory.
+  </Accordion>
+  
+  <Accordion title="--with-qat_hw_install_dir" icon="download">
+    **QAT driver build directory**
+    
+    ```bash
+    --with-qat_hw_install_dir=/QAT/build
+    ```
+    
+    Path to built QAT Hardware driver library files for linking.
+    
+    **Default:** `<qat_hw_dir>/build`
+    
+    Only specify if driver libraries are built in a non-default location.
+  </Accordion>
+  
+  <Accordion title="--with-qat_hw_usdm_dir" icon="memory">
+    **USDM component directory**
+    
+    ```bash
+    --with-qat_hw_usdm_dir=/path/to/usdm
+    ```
+    
+    Path to User Space DMA-able Memory component.
+    
+    **Default:** `<qat_hw_dir>/quickassist/utilities/libusdm_drv`
+    
+    Only specify if using USDM and path differs from default.
+  </Accordion>
+  
+  <Accordion title="--with-qat_engine_id" icon="tag">
+    **Custom engine ID**
+    
+    ```bash
+    --with-qat_engine_id="custom_id"
+    ```
+    
+    **Default:** `"qatengine"`
+    
+    Set a custom engine ID. Useful for applications using the legacy "qat" ID.
+    
+    **Example:**
+    ```bash
+    ./configure --with-qat_engine_id="qat"
+    ```
+  </Accordion>
+  
+  <Accordion title="--with-qat_debug_file" icon="file-text">
+    **Debug log file path**
+    
+    ```bash
+    --with-qat_debug_file=/path/to/logfile
+    ```
+    
+    Enable logging to file instead of stderr. Works with:
+    - `--enable-qat_warnings`
+    - `--enable-qat_debug`
+    - `--enable-qat_mem_warnings`
+    - `--enable-qat_mem_debug`
+    
+    <Warning>
+    **Security Risk:** Logs may contain private keys and plaintext. Never use in production.
+    </Warning>
+    
+    **Requirements:**
+    - Full absolute path and filename
+    - Directory must be writable
+    - File is replaced (not appended) on each run
+  </Accordion>
+</AccordionGroup>
+
+## Provider & FIPS Support
+
+<AccordionGroup>
+  <Accordion title="--enable-qat_provider" icon="shield">
+    **Enable OpenSSL 3.0 Provider interface**
+    
+    ```bash
+    --enable-qat_provider
+    ```
+    
+    **Default:** Disabled (uses engine interface)
+    
+    Enable Provider support instead of engine for OpenSSL 3.0+.
+    
+    **Supported algorithms:**
+    - RSA
+    - ECDSA
+    - ECDH
+    - ECX
+    - AES-GCM
+    
+    <Note>
+    Only valid when built against OpenSSL 3.0 or later.
+    </Note>
+  </Accordion>
+  
+  <Accordion title="--enable-qat_fips" icon="lock">
+    **Enable FIPS support**
+    
+    ```bash
+    --enable-qat_fips
+    ```
+    
+    **Default:** Disabled
+    
+    **Requirements:**
+    - Must be used with `--enable-qat_provider`
+    - OpenSSL 3.0 or later
+    
+    Enables FIPS mode when provider is enabled.
+  </Accordion>
+</AccordionGroup>
+
+## QAT Hardware Algorithm Control
+
+### Asymmetric Crypto
+
+<AccordionGroup>
+  <Accordion title="RSA" icon="key">
+    ```bash
+    --disable-qat_hw_rsa  # Disable QAT_HW RSA
+    --enable-qat_hw_rsa   # Enable QAT_HW RSA (default)
+    ```
+    **Default:** Enabled
+  </Accordion>
+  
+  <Accordion title="DSA" icon="signature">
+    ```bash
+    --disable-qat_hw_dsa  # Disable QAT_HW DSA
+    --enable-qat_hw_dsa   # Enable QAT_HW DSA (default)
+    ```
+    **Default:** Enabled
+  </Accordion>
+  
+  <Accordion title="DH" icon="arrows-left-right">
+    ```bash
+    --disable-qat_hw_dh  # Disable QAT_HW DH
+    --enable-qat_hw_dh   # Enable QAT_HW DH (default)
+    ```
+    **Default:** Enabled
+  </Accordion>
+  
+  <Accordion title="ECDH" icon="arrows-rotate">
+    ```bash
+    --disable-qat_hw_ecdh  # Disable QAT_HW ECDH
+    --enable-qat_hw_ecdh   # Enable QAT_HW ECDH (default)
+    ```
+    **Default:** Enabled
+  </Accordion>
+  
+  <Accordion title="ECDSA" icon="pen-nib">
+    ```bash
+    --disable-qat_hw_ecdsa  # Disable QAT_HW ECDSA
+    --enable-qat_hw_ecdsa   # Enable QAT_HW ECDSA (default)
+    ```
+    **Default:** Enabled
+  </Accordion>
+  
+  <Accordion title="ECX (X25519/X448)" icon="chart-line">
+    ```bash
+    --disable-qat_hw_ecx  # Disable QAT_HW ECX
+    --enable-qat_hw_ecx   # Enable QAT_HW ECX (default)
+    ```
+    **Default:** Enabled
+  </Accordion>
+</AccordionGroup>
+
+### Symmetric Crypto & Ciphers
+
+<AccordionGroup>
+  <Accordion title="Chained Ciphers" icon="link">
+    ```bash
+    --disable-qat_hw_ciphers  # Disable chained cipher acceleration
+    --enable-qat_hw_ciphers   # Enable chained cipher acceleration (default)
+    ```
+    **Default:** Enabled
+  </Accordion>
+  
+  <Accordion title="AES-GCM" icon="lock">
+    ```bash
+    --disable-qat_hw_gcm  # Disable AES-GCM
+    --enable-qat_hw_gcm   # Enable AES-GCM
+    ```
+    **Default:** Disabled
+  </Accordion>
+  
+  <Accordion title="AES-CCM" icon="shield-halved">
+    ```bash
+    --disable-qat_hw_ccm  # Disable AES-CCM
+    --enable-qat_hw_ccm   # Enable AES-CCM (default)
+    ```
+    **Default:** Enabled
+  </Accordion>
+  
+  <Accordion title="CHACHA20-POLY1305 (QAT Gen4 only)" icon="bolt">
+    ```bash
+    --disable-qat_hw_chachapoly  # Disable CHACHA20-POLY1305
+    --enable-qat_hw_chachapoly   # Enable CHACHA20-POLY1305
+    ```
+    **Default:** Disabled
+    
+    <Note>
+    Only supported on 4xxx (QAT gen 4) devices.
+    </Note>
+  </Accordion>
+  
+  <Accordion title="SM4-CBC (QAT Gen4 + Tongsuo)" icon="cube">
+    ```bash
+    --disable-qat_hw_sm4_cbc  # Disable SM4-CBC
+    --enable-qat_hw_sm4_cbc   # Enable SM4-CBC
+    ```
+    **Default:** Disabled
+    
+    **Requirements:**
+    - QAT gen 4 devices (4xxx)
+    - Built with Tongsuo
+  </Accordion>
+</AccordionGroup>
+
+### Key Derivation & Hashing
+
+<AccordionGroup>
+  <Accordion title="PRF" icon="key">
+    ```bash
+    --disable-qat_hw_prf  # Disable PRF
+    --enable-qat_hw_prf   # Enable PRF (default)
+    ```
+    **Default:** Enabled
+  </Accordion>
+  
+  <Accordion title="HKDF" icon="arrows-split-up-and-left">
+    ```bash
+    --disable-qat_hw_hkdf  # Disable HKDF
+    --enable-qat_hw_hkdf   # Enable HKDF
+    ```
+    **Default:** Disabled
+  </Accordion>
+  
+  <Accordion title="SHA-3 (QAT Gen4 only)" icon="hashtag">
+    ```bash
+    --disable-qat_hw_sha3  # Disable SHA-3
+    --enable-qat_hw_sha3   # Enable SHA-3
+    ```
+    **Default:** Disabled
+    
+    <Note>
+    Only supported on 4xxx (QAT gen 4) devices.
+    </Note>
+  </Accordion>
+  
+  <Accordion title="SM3 (QAT Gen4 only)" icon="hashtag">
+    ```bash
+    --disable-qat_hw_sm3  # Disable SM3
+    --enable-qat_hw_sm3   # Enable SM3
+    ```
+    **Default:** Disabled
+    
+    <Note>
+    Only supported on 4xxx (QAT gen 4) devices.
+    </Note>
+  </Accordion>
+  
+  <Accordion title="SM2 (QAT Gen4 only)" icon="signature">
+    ```bash
+    --disable-qat_hw_sm2  # Disable SM2
+    --enable-qat_hw_sm2   # Enable SM2
+    ```
+    **Default:** Disabled
+    
+    <Note>
+    Only supported on 4xxx (QAT gen 4) devices.
+    </Note>
+  </Accordion>
+</AccordionGroup>
+
+## QAT Software Algorithm Control
+
+<AccordionGroup>
+  <Accordion title="QAT_SW RSA" icon="key">
+    ```bash
+    --disable-qat_sw_rsa  # Disable QAT_SW RSA
+    --enable-qat_sw_rsa   # Enable QAT_SW RSA (default when qat_sw enabled)
+    ```
+    **Default:** Enabled when `--enable-qat_sw` is set
+  </Accordion>
+  
+  <Accordion title="QAT_SW AES-GCM" icon="lock">
+    ```bash
+    --disable-qat_sw_gcm  # Disable QAT_SW AES-GCM
+    --enable-qat_sw_gcm   # Enable QAT_SW AES-GCM (default when qat_sw enabled)
+    ```
+    **Default:** Enabled when `--enable-qat_sw` is set
+    
+    **Requirement:** IPSec_mb library must be installed
+  </Accordion>
+  
+  <Accordion title="QAT_SW ECX (X25519)" icon="chart-line">
+    ```bash
+    --disable-qat_sw_ecx  # Disable QAT_SW X25519
+    --enable-qat_sw_ecx   # Enable QAT_SW X25519 (default when qat_sw enabled)
+    ```
+    **Default:** Enabled when `--enable-qat_sw` is set
+  </Accordion>
+  
+  <Accordion title="QAT_SW ECDSA (P-256/P-384)" icon="pen-nib">
+    ```bash
+    --disable-qat_sw_ecdsa  # Disable QAT_SW ECDSA
+    --enable-qat_sw_ecdsa   # Enable QAT_SW ECDSA (default when qat_sw enabled)
+    ```
+    **Default:** Enabled when `--enable-qat_sw` is set
+  </Accordion>
+  
+  <Accordion title="QAT_SW ECDH (P-256/P-384/SM2)" icon="arrows-rotate">
+    ```bash
+    --disable-qat_sw_ecdh  # Disable QAT_SW ECDH
+    --enable-qat_sw_ecdh   # Enable QAT_SW ECDH (default when qat_sw enabled)
+    ```
+    **Default:** Enabled when `--enable-qat_sw` is set
+  </Accordion>
+  
+  <Accordion title="QAT_SW SM2" icon="signature">
+    ```bash
+    --disable-qat_sw_sm2  # Disable QAT_SW SM2
+    --enable-qat_sw_sm2   # Enable QAT_SW SM2 (default when qat_sw enabled)
+    ```
+    **Default:** Enabled when `--enable-qat_sw` is set
+  </Accordion>
+  
+  <Accordion title="QAT_SW SM3" icon="hashtag">
+    ```bash
+    --disable-qat_sw_sm3  # Disable QAT_SW SM3
+    --enable-qat_sw_sm3   # Enable QAT_SW SM3
+    ```
+    **Default:** Disabled
+  </Accordion>
+  
+  <Accordion title="QAT_SW SM4-CBC (Tongsuo only)" icon="cube">
+    ```bash
+    --disable-qat_sw_sm4_cbc  # Disable QAT_SW SM4-CBC
+    --enable-qat_sw_sm4_cbc   # Enable QAT_SW SM4-CBC
+    ```
+    **Default:** Disabled
+    
+    **Requirement:** Must be built with Tongsuo
+  </Accordion>
+  
+  <Accordion title="QAT_SW SM4-GCM (Tongsuo only)" icon="shield">
+    ```bash
+    --disable-qat_sw_sm4_gcm  # Disable QAT_SW SM4-GCM
+    --enable-qat_sw_sm4_gcm   # Enable QAT_SW SM4-GCM
+    ```
+    **Default:** Disabled
+    
+    **Requirement:** Must be built with Tongsuo
+  </Accordion>
+  
+  <Accordion title="QAT_SW SM4-CCM (Tongsuo only)" icon="shield-halved">
+    ```bash
+    --disable-qat_sw_sm4_ccm  # Disable QAT_SW SM4-CCM
+    --enable-qat_sw_sm4_ccm   # Enable QAT_SW SM4-CCM
+    ```
+    **Default:** Disabled
+    
+    **Requirement:** Must be built with Tongsuo
+  </Accordion>
+</AccordionGroup>
+
+## Performance & Optimization
+
+<AccordionGroup>
+  <Accordion title="--enable-qat_small_pkt_offload" icon="gauge">
+    **Offload small packet operations to QAT_HW**
+    
+    ```bash
+    --enable-qat_small_pkt_offload
+    ```
+    
+    **Default:** Disabled (small packets processed by CPU)
+    
+    Enables acceleration of small packet cipher operations to QAT Hardware.
+  </Accordion>
+  
+  <Accordion title="--enable-qat_plock" icon="lock">
+    **Plock optimization for multi-thread**
+    
+    ```bash
+    --enable-qat_plock
+    ```
+    
+    **Default:** Disabled
+    
+    Alternative to pthread's rwlock for multi-thread applications. Improves performance with higher thread counts.
+    
+    **Note:** Requires plock preload library.
+  </Accordion>
+  
+  <Accordion title="--enable-qat_sw_heuristic_timeout" icon="clock">
+    **Self-tuning polling timeout for QAT_SW**
+    
+    ```bash
+    --enable-qat_sw_heuristic_timeout
+    ```
+    
+    **Default:** Disabled
+    
+    Enables self-tuning of the timeout in the QAT_SW polling thread.
+  </Accordion>
+  
+  <Accordion title="--enable-qat_cycle_counts" icon="stopwatch">
+    **Cycle count measurement for QAT_SW**
+    
+    ```bash
+    --enable-qat_cycle_counts
+    ```
+    
+    **Default:** Disabled
+    
+    Enable cycle count measurement in QAT_SW acceleration code paths.
+  </Accordion>
+</AccordionGroup>
+
+## Security & Special Features
+
+<AccordionGroup>
+  <Accordion title="--disable-qat_hw_lenstra_protection" icon="shield-xmark">
+    **Disable Lenstra attack protection**
+    
+    ```bash
+    --disable-qat_hw_lenstra_protection
+    ```
+    
+    **Default:** Protection enabled
+    
+    Disables protection against Lenstra attack (CVE-2017-5681) in RSA-CRT implementation.
+    
+    <Warning>
+    Only disable if QAT driver/firmware provides this protection. See:
+    - [Intel Security Advisory](https://security-center.intel.com/advisory.aspx?intelid=INTEL-SA-00071)
+    - [CVE-2017-5681](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2017-5681)
+    </Warning>
+  </Accordion>
+  
+  <Accordion title="--enable-qat_hw_lenstra_verify_hw" icon="shield-check">
+    **Lenstra verify using QAT_HW**
+    
+    ```bash
+    --enable-qat_hw_lenstra_verify_hw
+    ```
+    
+    **Default:** Disabled (uses OpenSSL software method)
+    
+    Use QAT Hardware for Lenstra protection verification instead of software.
+  </Accordion>
+  
+  <Accordion title="--disable-qat_auto_engine_init_on_fork" icon="code-fork">
+    **Disable automatic engine init after fork**
+    
+    ```bash
+    --disable-qat_auto_engine_init_on_fork
+    ```
+    
+    **Default:** Auto-init enabled
+    
+    Prevents engine from automatically initializing after fork operations.
+    
+    **Use case:** Tight control over instance usage in forked processes
+    
+    **Manual initialization:** Use `INIT_ENGINE` message or wait for first QAT crypto operation
+  </Accordion>
+  
+  <Accordion title="--enable-qat_insecure_algorithms" icon="triangle-exclamation">
+    **Enable insecure/legacy algorithms**
+    
+    ```bash
+    --enable-qat_insecure_algorithms
+    ```
+    
+    **Default:** Disabled
+    
+    Enables:
+    - RSA < 2048 bits
+    - DSA, DH
+    - ECDH curves with bitlen < 256
+    - ECDSA curves with bitlen < 256
+    - AES128-CBC-HMAC-SHA1
+    - AES256-CBC-HMAC-SHA1
+    - SHA3-224
+    
+    <Warning>
+    QAT_HW driver v1.7+ must be built with `--enable-legacy-algorithms`.
+    </Warning>
+  </Accordion>
+  
+  <Accordion title="--enable-qat_ntls" icon="handshake">
+    **Enable NTLS support**
+    
+    ```bash
+    --enable-qat_ntls
+    ```
+    
+    **Default:** Disabled
+    
+    Enable NTLS in engine for handling NTLS requests.
+    
+    **Requirement:** Must be built with Tongsuo for SMx algorithms
+  </Accordion>
+</AccordionGroup>
+
+## Debug Options
+
+<Warning>
+**Never enable debug options in production!** They may:
+- Output private key material to console/logs
+- Introduce side-channel timing vulnerabilities
+- Significantly impact performance
+</Warning>
+
+<AccordionGroup>
+  <Accordion title="--enable-qat_warnings" icon="triangle-exclamation">
+    **Enable debug warnings**
+    
+    ```bash
+    --enable-qat_warnings
+    ```
+    
+    **Default:** Disabled
+    
+    Enable warnings to aid debugging.
+    
+    <Warning>
+    May introduce side-channel timing attack vulnerabilities.
+    </Warning>
+  </Accordion>
+  
+  <Accordion title="--enable-qat_debug" icon="bug">
+    **Enable debug output**
+    
+    ```bash
+    --enable-qat_debug
+    ```
+    
+    **Default:** Disabled
+    
+    Enable debug output to console. Also enables warnings.
+    
+    <Warning>
+    **Security Risk:** May output private keys to console/logs.
+    </Warning>
+  </Accordion>
+  
+  <Accordion title="--enable-qat_mem_warnings" icon="memory">
+    **Enable memory management warnings**
+    
+    ```bash
+    --enable-qat_mem_warnings
+    ```
+    
+    **Default:** Disabled
+    
+    Enable warnings from userspace memory management code.
+  </Accordion>
+  
+  <Accordion title="--enable-qat_mem_debug" icon="memory">
+    **Enable memory management debug**
+    
+    ```bash
+    --enable-qat_mem_debug
+    ```
+    
+    **Default:** Disabled
+    
+    Enable verbose debug output from userspace memory management. Also enables memory warnings.
+    
+    <Warning>
+    Very verbose output. May expose private key information.
+    </Warning>
+  </Accordion>
+</AccordionGroup>
+
+## Compiler & Linker Options
+
+<AccordionGroup>
+  <Accordion title="--with-cc-opt" icon="wrench">
+    **Additional compiler flags**
+    
+    ```bash
+    --with-cc-opt="-O3 -march=native"
+    ```
+    
+    Sets additional parameters added to CFLAGS at compile time.
+    
+    **Example:**
+    ```bash
+    ./configure --with-cc-opt="-O3 -march=native -DDEBUG"
+    ```
+  </Accordion>
+  
+  <Accordion title="--with-ld-opt" icon="link">
+    **Additional linker flags**
+    
+    ```bash
+    --with-ld-opt="-L/custom/lib -Wl,-rpath,/custom/lib"
+    ```
+    
+    Sets additional parameters used during linking.
+    
+    **Example:**
+    ```bash
+    ./configure --with-ld-opt="-L/opt/openssl/lib64"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Example Configurations
+
+<CodeGroup>
+
+```bash QAT_HW Only (OOT Driver)
+./autogen.sh
+./configure \
+  --with-qat_hw_dir=/QAT \
+  --with-openssl_install_dir=/usr/local/ssl
+make
+make install
+```
+
+```bash QAT_SW Only
+./autogen.sh
+./configure \
+  --enable-qat_sw \
+  --disable-qat_hw
+make
+make install
+```
+
+```bash QAT_HW + QAT_SW Co-existence
+./autogen.sh
+./configure \
+  --with-qat_hw_dir=/QAT \
+  --enable-qat_sw \
+  --with-openssl_install_dir=/usr/local/ssl
+make
+make install
+```
+
+```bash QAT_HW with In-tree Driver
+./autogen.sh
+./configure \
+  --with-qat_hw_dir=/usr/local
+make
+make install
+```
+
+```bash Provider Mode (OpenSSL 3.0+)
+./autogen.sh
+./configure \
+  --with-qat_hw_dir=/QAT \
+  --enable-qat_provider \
+  --with-openssl_install_dir=/usr/local/ssl
+make
+make install
+```
+
+```bash With Custom Algorithm Selection
+./autogen.sh
+./configure \
+  --with-qat_hw_dir=/QAT \
+  --enable-qat_hw_gcm \
+  --enable-qat_hw_sha3 \
+  --disable-qat_hw_dsa \
+  --with-openssl_install_dir=/usr/local/ssl
+make
+make install
+```
+
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Build from Source" icon="hammer" href="/installation/from-source">
+    Follow the complete build instructions
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/configuration">
+    Configure QAT Engine runtime behavior
+  </Card>
+</CardGroup>

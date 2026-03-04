@@ -1,0 +1,420 @@
+---
+title: 'QAT Driver Configuration'
+description: 'Configure Intel QAT hardware driver settings for optimal performance'
+---
+
+## Overview
+
+The QAT hardware driver requires configuration files to define the number of crypto instances, services enabled, and memory management options. This page covers driver configuration for Out-of-Tree (OOT) drivers.
+
+<Note>
+In-tree drivers (qatlib) do not use configuration files. Instead, they are managed through policy settings in `/etc/sysconfig/qat`. See the [qatlib installation guide](https://github.com/intel/qatlib/blob/main/INSTALL) for details.
+</Note>
+
+## Configuration Files Location
+
+QAT driver configuration files are typically located in `/etc` and follow naming patterns like:
+
+- QAT Gen4 (4xxx): `/etc/4xxx_dev0.conf`, `/etc/4xxx_dev1.conf`, etc.
+- QAT Gen3 (c6xx): `/etc/c6xx_dev0.conf`, `/etc/c6xx_dev1.conf`, etc.
+- QAT Gen2 (dh895xcc): `/etc/dh895xcc_dev0.conf`, etc.
+
+Each QAT device has its own configuration file.
+
+## The update_config.sh Script
+
+The QAT Engine includes a helper script to automatically configure driver settings for multi-process or multi-thread operation.
+
+### Usage
+
+```bash
+./update_config.sh <Mode> [<ServicesEnabled>] [<NumberCyInstances>] [<NumProcesses>] [<LimitDevAccess>]
+```
+
+### Arguments
+
+<ParamField path="Mode" type="string" required>
+  Operating mode: `multi_process` or `multi_thread`
+</ParamField>
+
+<ParamField path="ServicesEnabled" type="string">
+  Services to enable (see below for valid values)
+</ParamField>
+
+<ParamField path="NumberCyInstances" type="integer">
+  Number of crypto instances to configure
+</ParamField>
+
+<ParamField path="NumProcesses" type="integer">
+  Number of processes to configure (multi-process mode)
+</ParamField>
+
+<ParamField path="LimitDevAccess" type="integer">
+  Limit device access: `0` (disabled) or `1` (enabled)
+</ParamField>
+
+### ServicesEnabled Parameter
+
+Valid values depend on your QAT device generation:
+
+**QAT Gen4 Devices (4xxx, 401x, 402x):**
+- `asym;sym` - Asymmetric and symmetric crypto
+- `asym` - Asymmetric crypto only
+- `sym` - Symmetric crypto only
+- `asym;dc` - Asymmetric crypto and compression
+- `sym;dc` - Symmetric crypto and compression
+
+**QAT Gen3 and earlier (37c8, c6xx, etc.):**
+- `cy` - Crypto services
+
+<Warning>
+The QAT Engine uses crypto services. Compression services are not utilized by the engine.
+</Warning>
+
+### Examples
+
+**Basic multi-process configuration:**
+```bash
+./update_config.sh multi_process
+```
+
+**Multi-thread configuration:**
+```bash
+./update_config.sh multi_thread
+```
+
+**Advanced multi-process configuration:**
+```bash
+# 1 asymmetric instance, 64 processes, device access limited
+./update_config.sh multi_process asym 1 64 0
+```
+
+**QAT Gen4 with symmetric crypto only:**
+```bash
+./update_config.sh multi_thread sym 4
+```
+
+## Key Configuration Parameters
+
+### ServicesEnabled
+
+Defines which services the QAT device provides.
+
+```ini
+[GENERAL]
+ServicesEnabled = asym;sym
+```
+
+This parameter must match your use case:
+- Use `sym` for TLS/SSL acceleration (AES, HMAC)
+- Use `asym` for PKI operations (RSA, ECDSA, DH)
+- Use `asym;sym` for both
+
+### NumberCyInstances
+
+Specifies the number of crypto instances to create. Each instance can be used by a different thread or process.
+
+```ini
+[SHIM]
+NumberCyInstances = 4
+```
+
+**Recommendations:**
+- **Multi-thread**: Set to the number of threads that will use QAT
+- **Multi-process**: Set based on process count and workload
+- **General**: More instances allow better parallelism but consume more resources
+
+### NumProcesses
+
+Defines how many processes can use the QAT device (multi-process mode).
+
+```ini
+[SHIM]
+NumProcesses = 64
+```
+
+<Note>
+This parameter is primarily relevant for multi-process configurations.
+</Note>
+
+### LimitDevAccess
+
+Controls whether process access to the device is limited.
+
+```ini
+[GENERAL]
+LimitDevAccess = 0
+```
+
+- `0`: No restrictions (default)
+- `1`: Access limited to processes specified in configuration
+
+## Shared Virtual Memory (SVM)
+
+QAT Gen4 devices (4xxx) support Shared Virtual Memory, which eliminates the need to copy buffers to pinned memory, enabling zero-copy operation.
+
+### Prerequisites
+
+<Warning>
+SVM is only supported with Out-of-Tree (OOT) driver packages, not with qatlib in-tree drivers.
+</Warning>
+
+**BIOS Settings Required:**
+- Enable Intel IOMMU support for SVM
+- Enable VT-d (Virtualization Technology for Directed I/O)
+- Enable ATS (Address Translation Services)
+
+**Hardware Compatibility:**
+- QAT Gen4 devices only (4xxx, 401x, 402x)
+
+### Enabling SVM
+
+Add these parameters to each QAT device configuration file:
+
+```ini
+[GENERAL]
+SvmEnabled = 1
+ATEnabled = 1
+```
+
+**Parameters:**
+
+<ParamField path="SvmEnabled" type="integer">
+  Enable Shared Virtual Memory: `1` (enabled), `0` (disabled)
+</ParamField>
+
+<ParamField path="ATEnabled" type="integer">
+  Enable Address Translation: `1` (enabled), `0` (disabled)
+</ParamField>
+
+<Info>
+With SVM enabled, the QAT engine can pass virtual addresses directly to the hardware, avoiding expensive memory copies.
+</Info>
+
+## User Space DMA-able Memory (USDM)
+
+The QAT hardware driver requires pinned contiguous memory for DMA operations. This is provided by the User Space DMA-able Memory (USDM) component.
+
+### Thread-Specific USDM
+
+For multi-threaded applications, you can enable thread-specific memory allocations to avoid lock contention:
+
+```bash
+cd /QAT_driver_source
+./configure --enable-icp-thread-specific-usdm --enable-128k-slab
+make
+make install
+```
+
+**Configuration Flags:**
+
+<ParamField path="--enable-icp-thread-specific-usdm" type="flag">
+  Enables lockless thread-specific memory allocations
+</ParamField>
+
+<ParamField path="--enable-128k-slab" type="flag">
+  Enables larger memory slabs for better performance
+</ParamField>
+
+<Note>
+Thread-specific USDM is beneficial for multi-threaded applications but not necessary for multi-process use cases.
+</Note>
+
+### USDM Configuration in Driver Config
+
+The driver configuration file can specify USDM memory pool settings:
+
+```ini
+[SHIM]
+NumberCyInstances = 4
+
+[Accelerator0]
+Bank0 = Cy0
+Bank1 = Cy1
+
+[Cy0]
+RingBank = 0
+NumberOfRings = 16
+```
+
+These settings are typically set by the `update_config.sh` script or installer and rarely need manual adjustment.
+
+## Configuration Section Names
+
+By default, the QAT Engine looks for the `[SHIM]` section in the driver configuration file. You can change this using the `SET_CONFIGURATION_SECTION_NAME` engine message:
+
+```c
+ENGINE_ctrl_cmd(e, "SET_CONFIGURATION_SECTION_NAME", 0, "CUSTOM_SECTION", NULL, 0);
+```
+
+Then your configuration file would contain:
+
+```ini
+[CUSTOM_SECTION]
+NumberCyInstances = 4
+NumProcesses = 16
+```
+
+<Note>
+This message must be sent after engine creation but before initialization.
+</Note>
+
+## Multi-Process vs Multi-Thread
+
+### Multi-Process Configuration
+
+**Use when:**
+- Running multiple separate processes (e.g., web server worker processes)
+- Using forking models (Apache, Nginx workers)
+
+**Key settings:**
+```ini
+[SHIM]
+NumberCyInstances = 1
+NumProcesses = 64
+```
+
+**Script example:**
+```bash
+./update_config.sh multi_process asym;sym 1 64 0
+```
+
+### Multi-Thread Configuration
+
+**Use when:**
+- Single process with multiple threads
+- Thread pools for crypto operations
+
+**Key settings:**
+```ini
+[SHIM]
+NumberCyInstances = 8
+NumProcesses = 1
+```
+
+**Script example:**
+```bash
+./update_config.sh multi_thread asym;sym 8
+```
+
+<Info>
+Multi-threaded applications should enable thread-specific USDM in the driver for best performance.
+</Info>
+
+## Complete Configuration Example
+
+Here's a complete configuration file for QAT Gen4 in multi-thread mode:
+
+```ini
+##############################################################################
+# QAT Configuration File for 4xxx Device 0
+##############################################################################
+
+[GENERAL]
+ServicesEnabled = asym;sym
+
+# SVM Support (QAT Gen4 only)
+SvmEnabled = 1
+ATEnabled = 1
+
+# Device access
+LimitDevAccess = 0
+
+[SHIM]
+NumberCyInstances = 8
+NumProcesses = 1
+NumberAdcInstances = 0
+
+NumberCyInstances = 8
+NumberDcInstances = 0
+
+# Crypto Instances
+Cy0Name = "IPSec0"
+Cy0IsPolled = 1
+
+Cy1Name = "IPSec1"
+Cy1IsPolled = 1
+
+Cy2Name = "IPSec2"
+Cy2IsPolled = 1
+
+Cy3Name = "IPSec3"
+Cy3IsPolled = 1
+
+Cy4Name = "IPSec4"
+Cy4IsPolled = 1
+
+Cy5Name = "IPSec5"
+Cy5IsPolled = 1
+
+Cy6Name = "IPSec6"
+Cy6IsPolled = 1
+
+Cy7Name = "IPSec7"
+Cy7IsPolled = 1
+```
+
+## Applying Configuration Changes
+
+After modifying configuration files, restart the QAT service:
+
+```bash
+# Stop QAT service
+sudo service qat_service stop
+
+# Start QAT service (loads new configuration)
+sudo service qat_service start
+
+# Verify status
+sudo service qat_service status
+```
+
+<Warning>
+You must restart the QAT service for configuration changes to take effect.
+</Warning>
+
+## Verifying Configuration
+
+Check that instances were created correctly:
+
+```bash
+# View QAT devices
+adf_ctl status
+
+# Example output:
+QAT Device 0
+State: up
+Cy Instances: 8
+Dc Instances: 0
+```
+
+## Troubleshooting
+
+### Configuration Not Loading
+
+1. Check file permissions: configuration files should be readable
+2. Verify file syntax: no typos in parameter names
+3. Check service status: `sudo service qat_service status`
+4. Review logs: `dmesg | grep qat`
+
+### Insufficient Instances
+
+If you see errors about no available instances:
+
+1. Increase `NumberCyInstances` in configuration
+2. Restart QAT service
+3. Verify with `adf_ctl status`
+
+### SVM Not Working
+
+1. Verify BIOS settings (IOMMU, VT-d, ATS)
+2. Check kernel boot parameters: `intel_iommu=on`
+3. Confirm QAT Gen4 device
+4. Verify OOT driver (not qatlib)
+
+## Additional Resources
+
+- [OpenSSL Configuration](/configuration/openssl-config)
+- [Engine Control Messages](/configuration/engine-messages)
+- [QAT Driver Getting Started Guide](https://www.intel.com/content/www/us/en/developer/topic-technology/open/quick-assist-technology/overview.html)
+- [qatlib Installation](https://github.com/intel/qatlib/blob/main/INSTALL)

@@ -1,0 +1,159 @@
+---
+title: 'OpenSSL Pipelining'
+description: 'Leverage OpenSSL pipelining capability with QAT Engine for parallel processing'
+---
+
+## Overview
+
+The OpenSSL pipelining feature provides the capability to parallelize processing for a single connection. Large buffers can be split into smaller chunks, with each chunk processed simultaneously, improving throughput and performance.
+
+## How QAT Engine Supports Pipelining
+
+The Intel QAT OpenSSL Engine supports OpenSSL's pipelining capability specifically for **chained cipher encryption operations**.
+
+### Pipeline Specifications
+
+- **Maximum Pipelines**: 32 buffer chunks can be processed in parallel
+- **Maximum Pipeline Size**: 16,384 bytes per pipeline
+- **Acceleration Policy**: Pipelined operations are always accelerated to the hardware accelerator, ignoring the small packet offload threshold
+
+## Use Cases
+
+### TLS Connection Optimization
+
+Pipelining is particularly useful for:
+
+- **Large Data Transfers**: Breaking large SSL/TLS payloads into parallel chunks
+- **High Throughput Scenarios**: Maximizing bandwidth utilization on high-speed connections  
+- **Bulk Encryption**: Encrypting large files or data streams efficiently
+
+### Example: Encrypting a Large Buffer
+
+Instead of encrypting a 64KB buffer sequentially:
+
+```
+Sequential: [====== 64KB ======] → Single operation
+```
+
+Pipelining splits it into parallel chunks:
+
+```
+Pipelined: [16KB] [16KB] [16KB] [16KB] → 4 parallel operations
+```
+
+## Configuration
+
+### OpenSSL Pipelining API
+
+Applications can control pipelining behavior using OpenSSL's SSL context functions:
+
+```c
+// Set the maximum send fragment size
+SSL_CTX_set_max_send_fragment(ctx, fragment_size);
+
+// Set split send fragment size (enables pipelining)
+SSL_CTX_set_split_send_fragment(ctx, split_size);
+
+// Set maximum number of pipelines
+SSL_CTX_set_max_pipelines(ctx, max_pipelines);
+```
+
+### Recommended Settings
+
+For optimal QAT Engine performance:
+
+```c
+// Enable up to 32 pipelines (QAT maximum)
+SSL_CTX_set_max_pipelines(ctx, 32);
+
+// Set fragment size to 16KB (QAT maximum per pipeline)
+SSL_CTX_set_split_send_fragment(ctx, 16384);
+```
+
+## Performance Benefits
+
+### Parallelization Advantages
+
+1. **Reduced Latency**: Multiple chunks processed simultaneously reduce overall processing time
+2. **Better Hardware Utilization**: Keeps QAT acceleration devices busy with parallel work
+3. **Improved Throughput**: Higher data rates for bulk encryption operations
+
+### Performance Considerations
+
+<Info>
+  Pipelined operations bypass the small packet offload threshold, ensuring all pipelined chunks are hardware-accelerated regardless of size.
+</Info>
+
+**Optimal Scenarios**:
+- Large file transfers over TLS
+- High-bandwidth streaming applications
+- Bulk data encryption/decryption
+
+**Less Optimal Scenarios**:
+- Small message transfers (overhead may outweigh benefits)
+- Request-response protocols with small payloads
+- Applications with limited buffer sizes
+
+## Limitations
+
+### Supported Operations
+
+- **Supported**: Chained cipher encryption operations
+- **Not Supported**: 
+  - Standalone cipher operations
+  - Hash operations
+  - Asymmetric cryptography
+  - Key derivation functions
+
+### Resource Constraints
+
+- Maximum 32 concurrent pipelines per connection
+- Maximum 16,384 bytes per pipeline chunk
+- Requires sufficient QAT instances to handle parallel operations
+
+## OpenSSL Documentation
+
+For comprehensive information about OpenSSL's pipelining API, refer to:
+
+[SSL_CTX_set_split_send_fragment - OpenSSL Documentation](https://www.openssl.org/docs/man1.1.0/ssl/SSL_CTX_set_split_send_fragment.html)
+
+## Example Usage
+
+### C Application Example
+
+```c
+#include <openssl/ssl.h>
+
+SSL_CTX *ctx = SSL_CTX_new(TLS_method());
+
+// Enable pipelining with optimal settings for QAT
+SSL_CTX_set_max_pipelines(ctx, 32);
+SSL_CTX_set_split_send_fragment(ctx, 16384);
+SSL_CTX_set_max_send_fragment(ctx, 16384);
+
+// Create SSL connection
+SSL *ssl = SSL_new(ctx);
+SSL_set_fd(ssl, socket_fd);
+
+// Normal SSL operations - pipelining happens automatically
+SSL_write(ssl, large_buffer, buffer_size);
+```
+
+### Performance Measurement
+
+Test pipelining performance:
+
+```bash
+# Test with pipelining disabled (baseline)
+openssl s_time -connect server:443 -www /large_file
+
+# Test with pipelining enabled
+openssl s_time -connect server:443 -www /large_file -pipeline
+```
+
+## Best Practices
+
+1. **Size Your Fragments**: Use 16KB fragments to match QAT's maximum pipeline size
+2. **Monitor Resource Usage**: Ensure sufficient QAT instances are available for parallel operations  
+3. **Profile Your Workload**: Measure performance gains with your specific data patterns
+4. **Consider Memory**: Each pipeline requires buffer allocation; balance parallelism with memory constraints

@@ -1,0 +1,274 @@
+---
+title: 'Asynchronous Operations'
+description: 'Understanding asynchronous job handling in OpenSSL with QAT acceleration'
+---
+
+## Asynchronous Job Handling in OpenSSL
+
+The QAT OpenSSL* Engine leverages OpenSSL's asynchronous mode infrastructure (`ASYNC_JOB`) introduced in OpenSSL 1.1.0. This infrastructure enables non-blocking cryptographic operations, allowing applications to initiate multiple crypto requests without waiting for each to complete.
+
+### How Async Mode Works
+
+In asynchronous mode:
+
+1. **Job Submission**: Applications submit cryptographic operations to the engine
+2. **Non-blocking Return**: The engine returns immediately without waiting for completion
+3. **Parallel Processing**: Multiple operations proceed simultaneously on QAT hardware or in SW batches
+4. **Completion Notification**: Applications are notified when operations finish
+
+```
+Application Thread
+    |
+    ├──> Submit Request 1 ──> QAT Engine ──> Hardware/SW
+    ├──> Submit Request 2 ──> QAT Engine ──> Hardware/SW  
+    ├──> Submit Request 3 ──> QAT Engine ──> Hardware/SW
+    |
+    └──> Wait for Completions ──> Callback/Event ──> Process Results
+```
+
+This approach maximizes throughput by keeping hardware accelerators and multi-buffer queues fully utilized.
+
+## Completion Notification Methods
+
+The QAT OpenSSL* Engine supports two methods for notifying applications of completed operations:
+
+### Callback Method
+
+The engine automatically detects and uses callback-based notification when available:
+
+- **Lower Overhead**: More CPU-efficient than file descriptors
+- **Direct Notification**: Engine directly invokes application callback functions
+- **Automatic Detection**: Build system detects OpenSSL version support
+- **Preferred Method**: Used automatically when a callback function is set
+
+### File Descriptor Method
+
+Fallback method for compatibility:
+
+- **Poll/Select Compatible**: Works with standard I/O multiplexing
+- **Legacy Support**: Available in all OpenSSL 1.1.0+ versions
+- **Fallback**: Used when no callback function is configured
+
+<Note>
+The callback method is preferred for performance. The engine will automatically use it when your OpenSSL version supports callbacks and your application provides a callback function.
+</Note>
+
+## The async_jobs Parameter
+
+The `async_jobs` parameter controls the level of parallelism for asynchronous operations.
+
+### What async_jobs Does
+
+- **Concurrent Operations**: Specifies how many operations can be in-flight simultaneously
+- **Queue Depth**: Determines the depth of request queues for batching (QAT_SW)
+- **Resource Allocation**: Controls memory and context allocation for async operations
+
+### Setting async_jobs
+
+In OpenSSL speed tests:
+
+```bash
+openssl speed -engine qatengine -elapsed -async_jobs 64 rsa2048
+```
+
+In applications using OpenSSL:
+
+```c
+// Create async job context
+ASYNC_WAIT_CTX *waitctx;
+size_t num_jobs = 64;
+
+// Configure engine with desired parallelism
+ENGINE_ctrl(engine, ENGINE_CTRL_SET_ASYNC_JOBS, num_jobs, NULL, NULL);
+```
+
+### Choosing the Right Value
+
+Optimal `async_jobs` values depend on several factors:
+
+#### For QAT Hardware
+
+- **Low Concurrency**: 8-32 jobs for basic workloads
+- **High Throughput**: 64-128 jobs for maximum performance
+- **Large Packets**: Fewer jobs (32-64) for operations on 8KB+ buffers
+- **Small Packets**: More jobs (128+) for sub-1KB operations
+
+#### For QAT Software  
+
+- **Multibuffer Batching**: At least 8 jobs to fill batches (QAT_SW processes up to 8 simultaneously)
+- **High Parallelism**: 64-128 jobs for optimal multi-buffer utilization
+- **Connection Count**: Match or exceed the number of concurrent client connections
+
+#### General Guidelines
+
+```
+Low Load (1-10 connections):    async_jobs = 16-32
+Medium Load (10-100 connections): async_jobs = 64-128  
+High Load (100+ connections):   async_jobs = 128-256
+```
+
+<Note>
+More async jobs consume more memory. Balance parallelism needs with available system resources.
+</Note>
+
+## Performance Benefits
+
+Asynchronous operations provide significant performance improvements:
+
+### Throughput Gains
+
+- **Hardware Utilization**: Keeps QAT devices busy with continuous work
+- **Batching Efficiency**: Enables multi-buffer processing in QAT_SW
+- **Pipeline Depth**: Reduces idle time between operations
+
+### Latency Optimization
+
+- **Non-blocking**: Application threads don't wait for crypto completion
+- **Parallel Processing**: Multiple operations complete simultaneously
+- **Reduced Context Switching**: Fewer thread wake/sleep cycles
+
+### Typical Performance Impact
+
+| Scenario | Sync Mode | Async Mode | Improvement |
+|----------|-----------|------------|-------------|
+| RSA 2048 Sign (QAT_HW) | 10K ops/sec | 80K ops/sec | 8x |
+| RSA 2048 Sign (QAT_SW) | 5K ops/sec | 45K ops/sec | 9x |
+| ECDSA P-256 (QAT_SW) | 8K ops/sec | 95K ops/sec | 12x |
+| AES-GCM (QAT_SW) | 2 GB/sec | 15 GB/sec | 7.5x |
+
+*Note: Results vary by platform, workload, and configuration*
+
+## Example: OpenSSL Speed Test
+
+### Basic Asynchronous Test
+
+```bash
+openssl speed -engine qatengine -elapsed -async_jobs 64 rsa2048
+```
+
+This command:
+- Loads the qatengine
+- Enables asynchronous mode with 64 parallel jobs
+- Tests RSA 2048-bit signature operations
+- Reports elapsed (wall clock) time for accurate async measurements
+
+### Comparing Sync vs. Async
+
+```bash
+# Synchronous mode
+openssl speed -engine qatengine -elapsed rsa2048
+
+# Asynchronous mode with 32 jobs
+openssl speed -engine qatengine -elapsed -async_jobs 32 rsa2048
+
+# Asynchronous mode with 128 jobs  
+openssl speed -engine qatengine -elapsed -async_jobs 128 rsa2048
+```
+
+Observe throughput scaling with increased parallelism.
+
+### Multi-buffer Optimization (QAT_SW)
+
+```bash
+# Insufficient parallelism - poor batching
+openssl speed -engine qatengine -elapsed -async_jobs 4 rsa2048
+
+# Good parallelism - efficient batching  
+openssl speed -engine qatengine -elapsed -async_jobs 64 rsa2048
+```
+
+QAT_SW requires adequate async_jobs to fill 8-request batches for optimal performance.
+
+## Example: Application Integration
+
+### Setting Up Async Context
+
+```c
+#include <openssl/async.h>
+#include <openssl/engine.h>
+
+ENGINE *engine;
+ASYNC_WAIT_CTX *waitctx = NULL;
+ASYNC_JOB *job = NULL;
+
+// Load and initialize engine
+engine = ENGINE_by_id("qatengine");
+ENGINE_init(engine);
+
+// Set default algorithms  
+ENGINE_set_default_RSA(engine);
+ENGINE_set_default_ECDH(engine);
+```
+
+### Performing Async Operation
+
+```c
+int async_operation() {
+    int ret;
+    ASYNC_WAIT_CTX *waitctx = ASYNC_WAIT_CTX_new();
+    
+    // Start async job
+    ret = ASYNC_start_job(&job, waitctx, &job_ret,
+                          perform_crypto_operation, args, sizeof(args));
+    
+    switch(ret) {
+        case ASYNC_PAUSE:
+            // Operation in progress - wait for completion
+            ASYNC_WAIT_CTX_get_all_fds(waitctx, NULL, &numfds);
+            // Use select/poll on file descriptors or wait for callback
+            break;
+            
+        case ASYNC_FINISH:
+            // Operation complete
+            process_results();
+            break;
+            
+        case ASYNC_ERR:
+            // Error occurred
+            handle_error();
+            break;
+    }
+    
+    ASYNC_WAIT_CTX_free(waitctx);
+    return ret;
+}
+```
+
+### Cleanup
+
+```c
+void cleanup() {
+    ENGINE_finish(engine);
+    ENGINE_free(engine);
+}
+```
+
+## Best Practices
+
+### For Maximum Performance
+
+1. **Always Use Async Mode**: Especially important for QAT_SW multi-buffer efficiency
+2. **Tune async_jobs**: Test different values for your specific workload
+3. **Use Callbacks**: When supported, callback notification is more efficient than file descriptors
+4. **Monitor Queue Depth**: Ensure queues stay full but don't cause excessive memory usage
+
+### For Reliability
+
+1. **Handle ASYNC_PAUSE**: Always handle paused jobs correctly
+2. **Check Return Values**: Verify ASYNC_start_job return codes
+3. **Clean Up Resources**: Free async contexts when operations complete
+4. **Error Handling**: Implement proper error handling for async failures
+
+### For Development
+
+1. **Start Simple**: Begin with synchronous mode, then add async
+2. **Test Incremental Jobs**: Increase async_jobs gradually to find optimal value
+3. **Measure Performance**: Use OpenSSL speed to validate improvements
+4. **Profile Your App**: Monitor CPU, memory, and crypto throughput
+
+## Further Reading
+
+For more details on OpenSSL's asynchronous infrastructure:
+
+- [ASYNC_start_job documentation](https://www.openssl.org/docs/manmaster/man3/ASYNC_start_job.html)
+- [ASYNC_WAIT_CTX documentation](https://www.openssl.org/docs/manmaster/man3/ASYNC_WAIT_CTX_new.html)

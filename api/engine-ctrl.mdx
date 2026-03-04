@@ -1,0 +1,832 @@
+---
+title: Engine Control Commands
+description: Complete reference for Intel QAT Engine control commands and configuration
+---
+
+# Engine Control Commands
+
+The Intel QAT OpenSSL Engine supports custom control messages for configuration and operation management. These commands are sent using the `ENGINE_ctrl_cmd()` function and allow applications to control engine behavior at runtime.
+
+## Overview
+
+Engine control messages serve two primary purposes:
+
+1. **Configuration**: Set options before engine initialization
+2. **Operation Control**: Manage engine operation during runtime
+
+<Note>
+Configuration messages must typically be sent after engine creation but before initialization. Operation control messages can be sent at any time after initialization.
+</Note>
+
+## ENGINE_ctrl_cmd Usage
+
+The control command interface is defined as:
+
+```c
+int ENGINE_ctrl_cmd(
+    ENGINE *e,              // Pointer to QAT engine
+    const char *cmd_name,   // Message string identifier
+    long i,                 // Numeric parameter (Param 3)
+    void *p,                // Pointer parameter (Param 4)
+    void (*f)(void),        // Function pointer (always NULL)
+    int cmd_optional        // Always 0
+);
+```
+
+**Simplified signature for QAT Engine:**
+```c
+ENGINE_ctrl_cmd(<Engine>, <Message String>, <Param 3>, <Param 4>, NULL, 0)
+```
+
+**Parameters:**
+- `<Engine>`: Pointer to the Intel QAT enabled OpenSSL Engine
+- `<Message String>`: String representing the message type
+- `<Param 3>`: Long integer or pointer cast to long
+- `<Param 4>`: Void pointer for data structures
+- Last two parameters: Always `NULL` and `0`
+
+## Polling Mode Commands
+
+### ENABLE_EXTERNAL_POLLING
+
+Enable external polling mode where the application controls polling.
+
+**Syntax:**
+```c
+ENGINE_ctrl_cmd(e, "ENABLE_EXTERNAL_POLLING", 0, NULL, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: `0`
+- Param 4: `NULL`
+
+**Description:**
+
+Enables external polling mode, making it the application's responsibility to poll for completed operations using the `POLL` message. This mode provides more control over when polling occurs.
+
+**Usage:**
+- Must be sent after engine creation
+- Must be sent before engine initialization
+- Cannot be changed after initialization
+
+**Example:**
+```c
+ENGINE *e = ENGINE_by_id("qatengine");
+ENGINE_ctrl_cmd(e, "ENABLE_EXTERNAL_POLLING", 0, NULL, NULL, 0);
+ENGINE_init(e);
+```
+
+### POLL
+
+Poll all instances for completed operations.
+
+**Syntax:**
+```c
+int poll_status;
+ENGINE_ctrl_cmd(e, "POLL", 0, &poll_status, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: `0`
+- Param 4: Pointer to an `int` (receives poll status)
+
+**Description:**
+
+Requests polling of all QAT instances. The status is returned in the variable pointed to by Param 4. Only used when external polling is enabled.
+
+**Return Values:**
+- `1`: Operations completed
+- `0`: No operations completed
+- `-1`: Error
+
+**Timing:**
+- Can be sent any time after engine initialization
+- Only effective when `ENABLE_EXTERNAL_POLLING` is set
+
+**Example:**
+```c
+int poll_status;
+while (operations_pending) {
+    ENGINE_ctrl_cmd(e, "POLL", 0, &poll_status, NULL, 0);
+    if (poll_status > 0) {
+        // Operations completed
+    }
+}
+```
+
+### ENABLE_EVENT_DRIVEN_POLLING_MODE
+
+Use event-driven polling with file descriptors.
+
+**Syntax:**
+```c
+ENGINE_ctrl_cmd(e, "ENABLE_EVENT_DRIVEN_POLLING_MODE", 0, NULL, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: `0`
+- Param 4: `NULL`
+
+**Description:**
+
+Changes the engine to use the QAT driver's event-driven polling feature. Applications can use file descriptors with `epoll()`, `select()`, or `poll()` for event notification.
+
+**Requirements:**
+- Linux only (not supported on FreeBSD)
+- Not available in qatlib RPM
+- Must be sent before engine initialization
+
+**Example:**
+```c
+ENGINE *e = ENGINE_by_id("qatengine");
+ENGINE_ctrl_cmd(e, "ENABLE_EVENT_DRIVEN_POLLING_MODE", 0, NULL, NULL, 0);
+ENGINE_init(e);
+```
+
+### DISABLE_EVENT_DRIVEN_POLLING_MODE
+
+Revert to timer-based polling.
+
+**Syntax:**
+```c
+ENGINE_ctrl_cmd(e, "DISABLE_EVENT_DRIVEN_POLLING_MODE", 0, NULL, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: `0`
+- Param 4: `NULL`
+
+**Description:**
+
+Changes the engine back to timer-based polling mode (default).
+
+**Timing:**
+- Must be sent after engine creation
+- Must be sent before engine initialization
+
+### SET_INTERNAL_POLL_INTERVAL
+
+Set the internal polling interval.
+
+**Syntax:**
+```c
+ENGINE_ctrl_cmd(e, "SET_INTERNAL_POLL_INTERVAL", interval_ns, NULL, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: Interval in nanoseconds (cast unsigned long to long)
+- Param 4: `NULL`
+
+**Description:**
+
+Sets the interval between polling attempts for hardware responses.
+
+**Valid Range:**
+- Default: `10,000` ns (10 μs)
+- Minimum: `1` ns
+- Maximum: `10,000,000` ns (10 ms)
+
+**Timing:**
+- Can be sent any time after engine creation
+
+**Example:**
+```c
+// Set to 50 microseconds
+ENGINE_ctrl_cmd(e, "SET_INTERNAL_POLL_INTERVAL", 50000, NULL, NULL, 0);
+```
+
+### SET_EPOLL_TIMEOUT
+
+Set the epoll wait timeout (event-driven mode).
+
+**Syntax:**
+```c
+ENGINE_ctrl_cmd(e, "SET_EPOLL_TIMEOUT", timeout_ms, NULL, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: Timeout in milliseconds (cast unsigned long to int)
+- Param 4: `NULL`
+
+**Description:**
+
+Sets the timeout for `epoll_wait()` when event-driven polling is enabled.
+
+**Valid Range:**
+- Default: `1,000` ms (1 second)
+- Minimum: `1` ms
+- Maximum: `10,000` ms (10 seconds)
+
+**Availability:**
+- Linux only
+- Not supported on FreeBSD or in qatlib RPM
+
+**Timing:**
+- Can be sent any time after engine creation
+
+**Example:**
+```c
+// Set to 500ms
+ENGINE_ctrl_cmd(e, "SET_EPOLL_TIMEOUT", 500, NULL, NULL, 0);
+```
+
+### GET_EXTERNAL_POLLING_FD
+
+Retrieve file descriptor for event-driven polling.
+
+**Syntax:**
+```c
+int fd;
+ENGINE_ctrl_cmd(e, "GET_EXTERNAL_POLLING_FD", instance_num, &fd, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: Instance number (cast int to long)
+- Param 4: Pointer to `int` (receives file descriptor)
+
+**Description:**
+
+Retrieves the file descriptor for a specific QAT instance. Use with `GET_NUM_CRYPTO_INSTANCES` to iterate through all instances.
+
+**Timing:**
+- Must be sent after engine initialization
+- Requires event-driven polling mode
+
+**Example:**
+```c
+int num_instances;
+ENGINE_ctrl_cmd(e, "GET_NUM_CRYPTO_INSTANCES", 0, &num_instances, NULL, 0);
+
+for (int i = 0; i < num_instances; i++) {
+    int fd;
+    ENGINE_ctrl_cmd(e, "GET_EXTERNAL_POLLING_FD", i, &fd, NULL, 0);
+    // Add fd to epoll set
+}
+```
+
+### ENABLE_INLINE_POLLING
+
+Enable inline polling with busy loop.
+
+**Syntax:**
+```c
+ENGINE_ctrl_cmd(e, "ENABLE_INLINE_POLLING", 0, NULL, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: `0`
+- Param 4: `NULL`
+
+**Description:**
+
+Enables inline polling mode where the engine uses a busy loop to check for hardware responses. Currently only available for synchronous RSA operations.
+
+**Characteristics:**
+- Lower latency
+- Higher CPU usage
+- Only for synchronous operations
+
+**Timing:**
+- Must be sent after engine creation
+- Must be sent before engine initialization
+
+### ENABLE_HEURISTIC_POLLING
+
+Enable intelligent polling based on request counts.
+
+**Syntax:**
+```c
+ENGINE_ctrl_cmd(e, "ENABLE_HEURISTIC_POLLING", 0, NULL, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: `0`
+- Param 4: `NULL`
+
+**Description:**
+
+Enables heuristic polling mode where applications use `GET_NUM_REQUESTS_IN_FLIGHT` to determine when to poll.
+
+**Requirements:**
+- External polling must be enabled first
+
+**Timing:**
+- Must be sent after engine creation
+- Must be sent before engine initialization
+
+**Example:**
+```c
+ENGINE_ctrl_cmd(e, "ENABLE_EXTERNAL_POLLING", 0, NULL, NULL, 0);
+ENGINE_ctrl_cmd(e, "ENABLE_HEURISTIC_POLLING", 0, NULL, NULL, 0);
+ENGINE_init(e);
+```
+
+### GET_NUM_REQUESTS_IN_FLIGHT
+
+Get the number of pending requests by type.
+
+**Syntax:**
+```c
+int *request_count_ptr;
+ENGINE_ctrl_cmd(e, "GET_NUM_REQUESTS_IN_FLIGHT", request_type, 
+                &request_count_ptr, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: Request type identifier (int cast to long)
+- Param 4: Pointer to `int*` (receives address of counter)
+
+**Request Types:**
+```c
+#define GET_NUM_ASYM_REQUESTS_IN_FLIGHT              1
+#define GET_NUM_KDF_REQUESTS_IN_FLIGHT               2
+#define GET_NUM_CIPHER_PIPELINE_REQUESTS_IN_FLIGHT   3
+```
+
+**Description:**
+
+Returns a pointer to the internal counter for a specific request type. Applications can read this value directly to determine when to poll.
+
+**Timing:**
+- Can be sent any time after engine initialization
+- Requires heuristic polling mode
+
+**Example:**
+```c
+int *asym_count;
+ENGINE_ctrl_cmd(e, "GET_NUM_REQUESTS_IN_FLIGHT", 
+                GET_NUM_ASYM_REQUESTS_IN_FLIGHT, &asym_count, NULL, 0);
+
+while (*asym_count > 0) {
+    int poll_status;
+    ENGINE_ctrl_cmd(e, "POLL", 0, &poll_status, NULL, 0);
+}
+```
+
+## Instance Management Commands
+
+### GET_NUM_CRYPTO_INSTANCES
+
+Get total number of crypto instances.
+
+**Syntax:**
+```c
+int num_instances;
+ENGINE_ctrl_cmd(e, "GET_NUM_CRYPTO_INSTANCES", 0, &num_instances, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: `0`
+- Param 4: Pointer to `int` (receives instance count)
+
+**Description:**
+
+Retrieves the total number of crypto instances available as specified in the QAT driver config file.
+
+**Timing:**
+- Must be sent after engine initialization
+
+### SET_INSTANCE_FOR_THREAD
+
+Bind current thread to specific instance.
+
+**Syntax:**
+```c
+ENGINE_ctrl_cmd(e, "SET_INSTANCE_FOR_THREAD", instance_num, NULL, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: Instance number (long)
+- Param 4: `NULL`
+
+**Description:**
+
+Binds the calling thread to a specific QAT instance number. Automatically triggers engine initialization if not already initialized.
+
+**Timing:**
+- Must be sent after engine creation
+- Automatically initializes engine
+
+**Example:**
+```c
+ENGINE *e = ENGINE_by_id("qatengine");
+ENGINE_ctrl_cmd(e, "SET_INSTANCE_FOR_THREAD", 0, NULL, NULL, 0);
+// Engine is now initialized and bound to instance 0
+```
+
+### SET_CONFIGURATION_SECTION_NAME
+
+Set QAT driver config section name.
+
+**Syntax:**
+```c
+ENGINE_ctrl_cmd(e, "SET_CONFIGURATION_SECTION_NAME", 0, section_name, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: `0`
+- Param 4: NULL-terminated string (max 64 bytes including NULL)
+
+**Description:**
+
+Configures the engine to use a specific section name from the QAT driver config file instead of the default `[SHIM]`.
+
+**Timing:**
+- Must be sent after engine creation
+- Must be sent before engine initialization
+
+**Example:**
+```c
+const char *section = "SSL";
+ENGINE_ctrl_cmd(e, "SET_CONFIGURATION_SECTION_NAME", 0, 
+                (void *)section, NULL, 0);
+```
+
+## Initialization Commands
+
+### INIT_ENGINE
+
+Manually initialize the engine.
+
+**Syntax:**
+```c
+ENGINE_ctrl_cmd(e, "INIT_ENGINE", 0, NULL, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: `0`
+- Param 4: `NULL`
+
+**Description:**
+
+Manually initializes the engine. Normally not necessary as the engine auto-initializes, but can be used for performance optimization with `--disable-qat_auto_engine_init_on_fork`.
+
+**Use Cases:**
+- Performance optimization after fork
+- Manual initialization control
+- Embedded systems
+
+## Retry and Error Handling
+
+### SET_MAX_RETRY_COUNT
+
+Set maximum retry count for synchronous operations.
+
+**Syntax:**
+```c
+ENGINE_ctrl_cmd(e, "SET_MAX_RETRY_COUNT", retry_count, NULL, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: Retry count (int cast to long)
+- Param 4: `NULL`
+
+**Valid Values:**
+- Default: `5`
+- Minimum: `-1` (infinite retries)
+- Maximum: `100,000`
+
+**Description:**
+
+Determines how many times the engine retries a synchronous operation before flagging failure.
+
+**Timing:**
+- Can be sent any time after engine creation
+
+**Example:**
+```c
+// Set infinite retries
+ENGINE_ctrl_cmd(e, "SET_MAX_RETRY_COUNT", -1, NULL, NULL, 0);
+```
+
+### GET_NUM_OP_RETRIES
+
+Get the number of operation retries.
+
+**Syntax:**
+```c
+unsigned int retry_count;
+ENGINE_ctrl_cmd(e, "GET_NUM_OP_RETRIES", 0, &retry_count, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: `0`
+- Param 4: Pointer to `unsigned int`
+
+**Description:**
+
+Returns the total number of operation retries that have occurred.
+
+**Timing:**
+- Can be sent any time after engine initialization
+
+## Algorithm Control Commands
+
+### HW_ALGO_BITMAP
+
+Set QAT_HW algorithm bitmap.
+
+**Syntax:**
+```c
+unsigned long bitmap = 0x82EF;
+ENGINE_ctrl_cmd(e, "HW_ALGO_BITMAP", 0, &bitmap, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: `0`
+- Param 4: Pointer to `unsigned long int` (hex bitmap)
+
+**Description:**
+
+Sets the global QAT_HW algorithm bitmap and triggers rebinding of algorithm methods. The input is a hex string representing enabled algorithms.
+
+**Default:** `0xFFFF` (all algorithms enabled)
+
+**Bitmap Values:**
+- Bit 0: RSA
+- Bit 1: DSA
+- Bit 2: DH
+- Bit 3: ECDH
+- Bit 4: ECDSA
+- Bit 5: AES-GCM
+- Bit 6: AES-CCM
+- (See qat_common.md for complete list)
+
+**Timing:**
+- Can be sent any time
+- Triggers immediate rebinding
+
+### SW_ALGO_BITMAP
+
+Set QAT_SW algorithm bitmap.
+
+**Syntax:**
+```c
+unsigned long bitmap = 0x001F;
+ENGINE_ctrl_cmd(e, "SW_ALGO_BITMAP", 0, &bitmap, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: `0`
+- Param 4: Pointer to `unsigned long int` (hex bitmap)
+
+**Description:**
+
+Sets the global QAT_SW algorithm bitmap and triggers rebinding of algorithm methods.
+
+**Default:** `0xFFFF` (all algorithms enabled)
+
+**Timing:**
+- Can be sent any time
+- Triggers immediate rebinding
+
+**Example:**
+```c
+// Enable only RSA and AES-GCM for QAT_SW
+unsigned long bitmap = 0x0011;  // Bits 0 and 4
+ENGINE_ctrl_cmd(e, "SW_ALGO_BITMAP", 0, &bitmap, NULL, 0);
+```
+
+## Small Packet Offload
+
+### SET_CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD
+
+Set packet size threshold for offload.
+
+**Syntax:**
+```c
+const char *config = "AES-128-CBC-HMAC-SHA1:4096,AES-256-CBC-HMAC-SHA1:8192";
+ENGINE_ctrl_cmd(e, "SET_CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD", 
+                0, (void *)config, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: `0`
+- Param 4: NULL-terminated string (max 1024 bytes)
+
+**Description:**
+
+Sets the threshold packet size below which operations are processed on CPU rather than offloaded to accelerator.
+
+**Format:**
+```
+<cipher-name>:<threshold>,<cipher-name>:<threshold>,...
+```
+
+**Supported Ciphers:**
+- AES-128-CBC-HMAC-SHA1
+- AES-256-CBC-HMAC-SHA1
+- AES-128-CBC-HMAC-SHA256
+- AES-256-CBC-HMAC-SHA256
+
+**Threshold Range:**
+- Default: `2048` bytes
+- Minimum: `0` bytes
+- Maximum: `16,384` bytes
+
+**Note:** The threshold includes all TLS record bytes (header, IV, payload, HMAC, padding).
+
+**Availability:**
+- Not available with `--enable-qat_small_pkt_offload` build flag
+
+## Software Fallback Commands
+
+### ENABLE_SW_FALLBACK
+
+Enable software fallback on device failure.
+
+**Syntax:**
+```c
+ENGINE_ctrl_cmd(e, "ENABLE_SW_FALLBACK", 0, NULL, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: `0`
+- Param 4: `NULL`
+
+**Description:**
+
+Enables automatic fallback to software crypto when hardware acceleration devices go offline. Operations continue on-core if devices fail.
+
+**Availability:**
+- Not supported on FreeBSD
+- Not supported in qatlib RPM
+
+**Timing:**
+- Must be sent after engine creation
+- Must be sent before engine initialization
+
+**Example:**
+```c
+ENGINE *e = ENGINE_by_id("qatengine");
+ENGINE_ctrl_cmd(e, "ENABLE_SW_FALLBACK", 0, NULL, NULL, 0);
+ENGINE_init(e);
+```
+
+### HEARTBEAT_POLL
+
+Check if acceleration devices are functioning.
+
+**Syntax:**
+```c
+int heartbeat_status;
+ENGINE_ctrl_cmd(e, "HEARTBEAT_POLL", 0, &heartbeat_status, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: `0`
+- Param 4: Pointer to `int` (receives status)
+
+**Description:**
+
+Checks if acceleration devices are still functioning. Used with software fallback and external polling to detect device failures.
+
+**Return Values:**
+- `1`: Devices functioning
+- `0`: Devices offline
+
+**Recommended Interval:** 0.5 - 1 second
+
+**Timing:**
+- Can be sent any time after engine initialization
+- Typically used with ENABLE_SW_FALLBACK and ENABLE_EXTERNAL_POLLING
+
+**Availability:**
+- Not supported on FreeBSD
+- Not supported in qatlib RPM
+
+### DISABLE_QAT_OFFLOAD
+
+Disable hardware offload, use software only.
+
+**Syntax:**
+```c
+ENGINE_ctrl_cmd(e, "DISABLE_QAT_OFFLOAD", 0, NULL, NULL, 0);
+```
+
+**Parameters:**
+- Param 3: `0`
+- Param 4: `NULL`
+
+**Description:**
+
+Disables acceleration to hardware devices when QAT HW is enabled. All operations perform on-core instead.
+
+**Effect:**
+- Immediate
+- All pending operations complete normally
+- New operations use software
+
+**Timing:**
+- Can be sent any time after engine initialization
+
+## Complete Example
+
+### External Polling with Event-Driven Mode
+
+```c
+#include <openssl/engine.h>
+#include <sys/epoll.h>
+
+int main()
+{
+    ENGINE *e;
+    int num_instances, poll_status;
+    int epoll_fd;
+    struct epoll_event event, events[10];
+    
+    // Load and configure engine
+    e = ENGINE_by_id("qatengine");
+    if (!e) return 1;
+    
+    // Enable external and event-driven polling
+    ENGINE_ctrl_cmd(e, "ENABLE_EXTERNAL_POLLING", 0, NULL, NULL, 0);
+    ENGINE_ctrl_cmd(e, "ENABLE_EVENT_DRIVEN_POLLING_MODE", 0, NULL, NULL, 0);
+    ENGINE_ctrl_cmd(e, "SET_EPOLL_TIMEOUT", 1000, NULL, NULL, 0);
+    
+    // Initialize engine
+    if (!ENGINE_init(e)) return 1;
+    
+    // Get number of instances
+    ENGINE_ctrl_cmd(e, "GET_NUM_CRYPTO_INSTANCES", 0, &num_instances, NULL, 0);
+    
+    // Create epoll instance
+    epoll_fd = epoll_create1(0);
+    
+    // Add all instance FDs to epoll
+    for (int i = 0; i < num_instances; i++) {
+        int fd;
+        ENGINE_ctrl_cmd(e, "GET_EXTERNAL_POLLING_FD", i, &fd, NULL, 0);
+        
+        event.events = EPOLLIN;
+        event.data.fd = fd;
+        epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &event);
+    }
+    
+    // Set as default for crypto operations
+    ENGINE_set_default(e, ENGINE_METHOD_ALL);
+    
+    // ... perform crypto operations ...
+    
+    // Wait for events
+    int nfds = epoll_wait(epoll_fd, events, 10, 1000);
+    for (int i = 0; i < nfds; i++) {
+        // Poll for results
+        ENGINE_ctrl_cmd(e, "POLL", 0, &poll_status, NULL, 0);
+    }
+    
+    // Cleanup
+    ENGINE_finish(e);
+    ENGINE_free(e);
+    close(epoll_fd);
+    
+    return 0;
+}
+```
+
+### Heuristic Polling Example
+
+```c
+#include <openssl/engine.h>
+#include <openssl/rsa.h>
+
+int main()
+{
+    ENGINE *e;
+    int *asym_requests;
+    
+    // Load engine
+    e = ENGINE_by_id("qatengine");
+    
+    // Configure heuristic polling
+    ENGINE_ctrl_cmd(e, "ENABLE_EXTERNAL_POLLING", 0, NULL, NULL, 0);
+    ENGINE_ctrl_cmd(e, "ENABLE_HEURISTIC_POLLING", 0, NULL, NULL, 0);
+    
+    ENGINE_init(e);
+    
+    // Get pointer to request counter
+    ENGINE_ctrl_cmd(e, "GET_NUM_REQUESTS_IN_FLIGHT",
+                    GET_NUM_ASYM_REQUESTS_IN_FLIGHT,
+                    &asym_requests, NULL, 0);
+    
+    // Perform operations
+    // ...
+    
+    // Poll based on heuristic
+    while (*asym_requests > 0) {
+        int poll_status;
+        ENGINE_ctrl_cmd(e, "POLL", 0, &poll_status, NULL, 0);
+        
+        // Optional: sleep or do other work
+    }
+    
+    ENGINE_finish(e);
+    return 0;
+}
+```
+
+## See Also
+
+- [QAT SW Asymmetric Cryptography](/api/qat-sw/asymmetric)
+- [QAT SW Symmetric Cryptography](/api/qat-sw/symmetric)
+- [Provider Interface](/api/provider-interface)

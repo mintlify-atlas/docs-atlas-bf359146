@@ -1,97 +1,249 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Intel QAT Engine Documentation"
+description: "High-performance cryptographic acceleration for OpenSSL using Intel QuickAssist Technology"
+mode: "custom"
 ---
 
-## Setting up
+<div className="relative overflow-hidden bg-gradient-to-br from-[#0071C5] via-[#0054A3] to-[#003973] dark:from-[#0054A3] dark:via-[#003973] dark:to-[#002552] py-20 px-4 sm:px-6 lg:px-8">
+  <div className="max-w-6xl mx-auto">
+    <div className="lg:grid lg:grid-cols-12 lg:gap-8 items-center">
+      <div className="lg:col-span-7">
+        <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white mb-6">
+          Intel QAT Engine
+        </h1>
+        <p className="text-xl text-white/90 max-w-2xl mb-8">
+          Accelerate cryptographic operations with Intel QuickAssist Technology. Hardware and software acceleration for OpenSSL on Intel platforms.
+        </p>
+        <div className="flex flex-wrap gap-4">
+          <a
+            href="/quickstart"
+            className="inline-flex items-center px-6 py-3 rounded-lg bg-white text-[#0071C5] font-semibold hover:bg-gray-100 transition-colors no-underline"
+          >
+            Get Started
+            <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+          </a>
+          <a
+            href="/introduction"
+            className="inline-flex items-center px-6 py-3 rounded-lg border-2 border-white/30 bg-white/10 text-white font-semibold hover:bg-white/20 transition-colors no-underline"
+          >
+            Learn More
+          </a>
+        </div>
+      </div>
+      <div className="hidden lg:block lg:col-span-5 mt-8 lg:mt-0">
+        <div className="relative">
+          <div className="absolute inset-0 bg-gradient-to-tr from-[#00C7FD]/20 to-transparent rounded-2xl blur-3xl"></div>
+          <div className="relative bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-3 h-3 rounded-full bg-red-400"></div>
+              <div className="w-3 h-3 rounded-full bg-yellow-400"></div>
+              <div className="w-3 h-3 rounded-full bg-green-400"></div>
+            </div>
+            <pre className="text-sm text-white/90 overflow-x-auto">
+              <code>{`openssl speed -engine qatengine \\
+  -elapsed -async_jobs 72 rsa2048
 
-Get your documentation site up and running in minutes.
+qatengine: Hardware acceleration
+  enabled for RSA operations
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+sign    verify    sign/s verify/s
+rsa 2048 bits 0.000050s 0.000015s
+             20000.0   66666.7`}</code>
+            </pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
-## Make it yours
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Quick Start</h2>
+  <p className="text-lg text-gray-600 dark:text-gray-400 mb-8">
+    Get up and running with Intel QAT Engine in minutes
+  </p>
+  
+  <Steps>
+    <Step title="Install QAT Engine">
+      Install from your distribution's package manager or build from source.
+      
+      ```bash
+      # Fedora, RHEL, CentOS
+      dnf install qatengine
+      
+      # Ubuntu
+      apt-get install qatengine
+      ```
+      
+      <Accordion title="View installation output">
+        The package will install the QAT Engine library and configure it for use with your system's OpenSSL installation.
+      </Accordion>
+    </Step>
+    
+    <Step title="Configure OpenSSL">
+      Set the environment variable to enable the QAT engine.
+      
+      ```bash
+      export OPENSSL_ENGINES=/usr/lib64/engines-3
+      ```
+      
+      Or configure it in your OpenSSL configuration file for automatic loading.
+    </Step>
+    
+    <Step title="Verify Installation">
+      Test that the engine is loaded correctly.
+      
+      ```bash
+      openssl engine -t -c -v qatengine
+      ```
+      
+      <Accordion title="Expected output">
+        ```text
+        (qatengine) Reference implementation of QAT crypto engine
+         [RSA, DSA, DH, AES-128-CBC-HMAC-SHA1, AES-128-CBC-HMAC-SHA256,
+          AES-256-CBC-HMAC-SHA1, AES-256-CBC-HMAC-SHA256, TLS1-PRF, 
+          HKDF, X25519, X448]
+            [ available ]
+        ```
+      </Accordion>
+    </Step>
+    
+    <Step title="Run Performance Tests">
+      Benchmark cryptographic operations with hardware acceleration.
+      
+      ```bash
+      openssl speed -engine qatengine -elapsed -async_jobs 72 rsa2048
+      ```
+      
+      You should see significantly improved performance compared to software-only execution.
+    </Step>
+  </Steps>
+</div>
 
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
-  </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
-  </Card>
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Key Features</h2>
+  <p className="text-lg text-gray-600 dark:text-gray-400 mb-8">
+    Everything you need for high-performance cryptographic acceleration
+  </p>
+  
+  <CardGroup cols={2}>
     <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
-  </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
+      title="Hardware Acceleration"
+      icon="microchip"
+      href="/concepts/qat-hw"
+    >
+      Leverage Intel QuickAssist Technology hardware for RSA, ECDH, ECDSA, AES-GCM, ChaCha20-Poly1305, and more.
+    </Card>
+    <Card
+      title="Software Optimization"
+      icon="bolt"
+      href="/concepts/qat-sw"
+    >
+      Optimized software acceleration using Intel instruction sets on 3rd Gen Xeon and newer platforms.
+    </Card>
+    <Card
+      title="Asynchronous Operations"
+      icon="rotate"
+      href="/concepts/async-operations"
+    >
+      Non-blocking async job handling for maximum throughput in multi-threaded applications.
+    </Card>
+    <Card
+      title="OpenSSL 3.0 Provider"
+      icon="plug"
+      href="/integration/provider-support"
+    >
+      Native provider interface support for OpenSSL 3.0 alongside traditional engine interface.
+    </Card>
+    <Card
+      title="FIPS 140-3 Ready"
+      icon="shield-check"
+      href="/advanced/fips"
+    >
+      Built with FIPS 140-3 Level-1 certification requirements in mind.
+    </Card>
+    <Card
+      title="Dual-Mode Operation"
+      icon="layer-group"
+      href="/concepts/coexistence"
+    >
+      Run QAT_HW and QAT_SW simultaneously, with automatic algorithm routing.
+    </Card>
+  </CardGroup>
+</div>
 
-## Create beautiful pages
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Explore by Topic</h2>
+  <p className="text-lg text-gray-600 dark:text-gray-400 mb-8">
+    Deep dive into specific areas of the QAT Engine
+  </p>
+  
+  <CardGroup cols={3}>
+    <Card
+      title="Installation Guide"
+      icon="download"
+      href="/installation/requirements"
+    >
+      System requirements, package installation, and building from source.
+    </Card>
+    <Card
+      title="Configuration"
+      icon="gear"
+      href="/configuration/openssl-config"
+    >
+      OpenSSL configuration, engine control messages, and driver settings.
+    </Card>
+    <Card
+      title="API Reference"
+      icon="code"
+      href="/api/qat-hw/asymmetric"
+    >
+      Complete reference for QAT_HW and QAT_SW acceleration APIs.
+    </Card>
+    <Card
+      title="Advanced Features"
+      icon="stars"
+      href="/advanced/kpt"
+    >
+      KPT, software fallback, pipelining, and BoringSSL integration.
+    </Card>
+    <Card
+      title="Integration Examples"
+      icon="puzzle-piece"
+      href="/integration/applications"
+    >
+      Real-world integration with NGINX, HAProxy, and other applications.
+    </Card>
+    <Card
+      title="Troubleshooting"
+      icon="wrench"
+      href="/troubleshooting/common-issues"
+    >
+      Common issues, debugging techniques, and known limitations.
+    </Card>
+  </CardGroup>
+</div>
 
-Everything you need to create world-class documentation.
-
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
-
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<div className="mt-20 mb-16 max-w-5xl mx-auto px-6">
+  <div className="bg-gradient-to-br from-[#0071C5] to-[#0054A3] dark:from-[#0054A3] dark:to-[#003973] rounded-2xl p-8 sm:p-12">
+    <div className="max-w-3xl">
+      <h2 className="text-3xl font-bold text-white mb-4">
+        Ready to Accelerate Your Cryptography?
+      </h2>
+      <p className="text-lg text-white/90 mb-6">
+        Start using Intel QAT Engine today to unlock hardware-accelerated performance for your OpenSSL-based applications.
+      </p>
+      <a
+        href="/quickstart"
+        className="inline-flex items-center px-6 py-3 rounded-lg bg-white text-[#0071C5] font-semibold hover:bg-gray-100 transition-colors no-underline"
+      >
+        Get Started Now
+        <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+        </svg>
+      </a>
+    </div>
+  </div>
+</div>

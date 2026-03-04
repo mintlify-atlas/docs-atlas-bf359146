@@ -1,80 +1,231 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Get started with Intel QAT Engine in minutes"
 ---
 
-## Get started in three steps
+## Prerequisites
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
+Before installing the QAT Engine, ensure you have:
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Hardware" icon="microchip">
+    An Intel platform with QAT hardware support or 3rd Gen Xeon+ for software acceleration
+  </Card>
+  <Card title="Operating System" icon="linux">
+    Linux distribution (Fedora 34+, RHEL 8.4+, Ubuntu 24.04+, or SUSE SLES15 SP3+)
+  </Card>
+  <Card title="OpenSSL" icon="lock">
+    OpenSSL 1.1.1 or 3.0.x installed (system package or from source)
+  </Card>
+  <Card title="Root Access" icon="user-shield">
+    Sudo or root privileges for driver and package installation
+  </Card>
 </CardGroup>
 
+## Quick Installation
+
+The fastest way to get started is using your distribution's package manager.
+
+<Steps>
+  <Step title="Install QAT Engine Package">
+    Install the pre-built qatengine package from your distribution's repositories:
+    
+    <CodeGroup>
+    ```bash Fedora/RHEL/CentOS
+    sudo dnf install qatengine
+    ```
+    
+    ```bash Ubuntu
+    sudo apt-get update
+    sudo apt-get install qatengine
+    ```
+    
+    ```bash SUSE
+    sudo zypper install qatengine
+    ```
+    </CodeGroup>
+    
+    <Note>
+    These packages include QAT_HW support using the qatlib in-tree driver for 4xxx devices only. For other QAT hardware or QAT_SW, see the [installation guide](/installation/from-source).
+    </Note>
+  </Step>
+  
+  <Step title="Set Environment Variable">
+    Configure OpenSSL to find the QAT engine library:
+    
+    ```bash
+    export OPENSSL_ENGINES=/usr/lib64/engines-3
+    ```
+    
+    Add this to your `~/.bashrc` or `~/.profile` to make it permanent.
+    
+    <Tip>
+    The exact path may vary by distribution. Use `openssl version -a | grep ENGINESDIR` to find your engines directory.
+    </Tip>
+  </Step>
+  
+  <Step title="Verify Installation">
+    Test that the QAT Engine is loaded correctly:
+    
+    ```bash
+    openssl engine -t -c -v qatengine
+    ```
+    
+    <Accordion title="Expected output">
+    You should see output similar to:
+    
+    ```text
+    (qatengine) Reference implementation of QAT crypto engine(qat_hw) v2.0.0
+     [RSA, DSA, DH, AES-128-CBC-HMAC-SHA1, AES-128-CBC-HMAC-SHA256,
+      AES-256-CBC-HMAC-SHA1, AES-256-CBC-HMAC-SHA256, TLS1-PRF, 
+      HKDF, X25519, X448]
+         [ available ]
+         ENABLE_EXTERNAL_POLLING, POLL, SET_INSTANCE_FOR_THREAD,
+         GET_NUM_OP_RETRIES, SET_MAX_RETRY_COUNT, ...
+    ```
+    
+    The `[ available ]` status confirms the engine is ready to use.
+    </Accordion>
+  </Step>
+  
+  <Step title="Run Performance Tests">
+    Benchmark RSA operations with hardware acceleration:
+    
+    ```bash
+    # QAT Hardware acceleration (requires QAT device)
+    openssl speed -engine qatengine -elapsed -async_jobs 72 rsa2048
+    
+    # Compare with software-only (no engine)
+    openssl speed -elapsed rsa2048
+    ```
+    
+    <Accordion title="Understanding the results">
+    The QAT-accelerated test should show significantly higher throughput (signs/verifications per second) compared to the software-only baseline. Typical improvements:
+    
+    - **RSA 2048**: 10-50x improvement
+    - **ECDSA P-256**: 5-20x improvement
+    - **AES-128-GCM**: 2-5x improvement
+    
+    If performance is similar to baseline, ensure:
+    - QAT hardware drivers are installed and running
+    - You're using sufficient async_jobs (try 32-128 for QAT_HW)
+    - The algorithm is supported by your QAT hardware
+    </Accordion>
+  </Step>
+</Steps>
+
+## Test Additional Algorithms
+
+Try these commands to test different cryptographic operations:
+
+<CodeGroup>
+```bash ECDH
+# Elliptic Curve Diffie-Hellman
+openssl speed -engine qatengine -elapsed -async_jobs 72 ecdh
+```
+
+```bash ECDSA
+# Elliptic Curve Digital Signature Algorithm
+openssl speed -engine qatengine -elapsed -async_jobs 72 ecdsa
+```
+
+```bash AES-GCM
+# AES-GCM symmetric encryption
+openssl speed -engine qatengine -elapsed -async_jobs 72 -evp aes-128-gcm
+```
+
+```bash AES-CBC-HMAC-SHA256
+# AES-CBC with HMAC-SHA256 (chained cipher)
+openssl speed -engine qatengine -elapsed -async_jobs 72 -evp aes-128-cbc-hmac-sha256
+```
+</CodeGroup>
+
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+Different algorithms have different optimal async_jobs values. For QAT_HW, try 32-128. For QAT_SW, try 8-32. See [async operations](/concepts/async-operations) for tuning guidance.
 </Note>
+
+## Configure Automatic Loading
+
+To automatically load the QAT Engine for all OpenSSL applications, create an OpenSSL configuration file:
+
+<Steps>
+  <Step title="Create Configuration File">
+    Create `/etc/ssl/openssl-qat.cnf`:
+    
+    ```ini
+    openssl_conf = openssl_init
+
+    [openssl_init]
+    engines = engine_section
+
+    [engine_section]
+    qatengine = qatengine_section
+
+    [qatengine_section]
+    engine_id = qatengine
+    dynamic_path = /usr/lib64/engines-3/qatengine.so
+    default_algorithms = ALL
+    init = 1
+    ```
+  </Step>
+  
+  <Step title="Set Environment Variable">
+    Point OpenSSL to your configuration file:
+    
+    ```bash
+    export OPENSSL_CONF=/etc/ssl/openssl-qat.cnf
+    ```
+    
+    Add this to your shell profile for persistence.
+  </Step>
+  
+  <Step title="Verify Automatic Loading">
+    Test that the engine loads without the `-engine` flag:
+    
+    ```bash
+    # This should now use QAT acceleration automatically
+    openssl speed rsa2048
+    ```
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Build from Source" icon="code" href="/installation/from-source">
+    Install from source for QAT_SW support or custom builds
+  </Card>
+  <Card title="QAT Hardware Concepts" icon="microchip" href="/concepts/qat-hw">
+    Learn how QAT hardware acceleration works
+  </Card>
+  <Card title="Configure Your Application" icon="gear" href="/integration/applications">
+    Integrate with NGINX, HAProxy, or your own application
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/troubleshooting/common-issues">
+    Resolve common installation and runtime issues
+  </Card>
+</CardGroup>
+
+## Getting Help
+
+<AccordionGroup>
+  <Accordion title="Engine not loading?" icon="circle-exclamation">
+    - Verify OPENSSL_ENGINES path is correct
+    - Check file permissions on qatengine.so
+    - Ensure no conflicts with other engines
+    - See [common issues](/troubleshooting/common-issues) for detailed troubleshooting
+  </Accordion>
+  
+  <Accordion title="No performance improvement?" icon="gauge">
+    - Verify QAT hardware drivers are running: `lsmod | grep qat`
+    - Check QAT device status: `adf_ctl status`
+    - Increase async_jobs parameter
+    - Ensure the algorithm is hardware-accelerated (not all are enabled by default)
+  </Accordion>
+  
+  <Accordion title="Need more control?" icon="sliders">
+    - See [engine control messages](/configuration/engine-messages) for runtime configuration
+    - Review [build options](/installation/build-options) for compile-time customization
+    - Check [OpenSSL configuration](/configuration/openssl-config) for advanced setup
+  </Accordion>
+</AccordionGroup>

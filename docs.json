@@ -1,122 +1,117 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Intel QAT Engine",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#0071C5",
+    "light": "#00C7FD",
+    "dark": "#0054A3"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/intel/QAT_Engine"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/intel/QAT_Engine"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Installation",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "installation/requirements",
+              "installation/from-packages",
+              "installation/from-source",
+              "installation/build-options"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "concepts/qat-hw",
+              "concepts/qat-sw",
+              "concepts/coexistence",
+              "concepts/async-operations"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Configuration",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "configuration/openssl-config",
+              "configuration/engine-messages",
+              "configuration/driver-config"
+            ]
+          },
+          {
+            "group": "Advanced Features",
+            "pages": [
+              "advanced/kpt",
+              "advanced/fips",
+              "advanced/software-fallback",
+              "advanced/pipelining",
+              "advanced/boringssl"
+            ]
+          },
+          {
+            "group": "Integration",
+            "pages": [
+              "integration/applications",
+              "integration/provider-support"
+            ]
+          },
+          {
+            "group": "Troubleshooting",
+            "pages": [
+              "troubleshooting/common-issues",
+              "troubleshooting/debugging",
+              "troubleshooting/limitations"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Hardware Acceleration",
             "pages": [
-              "api-reference/introduction"
+              "api/qat-hw/asymmetric",
+              "api/qat-hw/symmetric",
+              "api/qat-hw/key-derivation",
+              "api/qat-hw/hashing"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Software Acceleration",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/qat-sw/asymmetric",
+              "api/qat-sw/symmetric",
+              "api/qat-sw/hashing"
+            ]
+          },
+          {
+            "group": "Engine Control",
+            "pages": [
+              "api/engine-ctrl",
+              "api/provider-interface"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }
